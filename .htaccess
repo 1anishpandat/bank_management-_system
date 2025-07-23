@@ -1,0 +1,22 @@
+# .htaccess - Place this file inside your project's subfolder (e.g., C:/xampp/htdocs/bms2/)
+
+# Turn on URL rewriting
+RewriteEngine On
+
+# Define the base URL for your project's subfolder
+# IMPORTANT: Change /bms2/ to your actual subfolder name if it's different!
+RewriteBase /bms2/
+
+# FORBID direct access to .php files
+# If the original request from the browser contains ".php", then return a 404 Not Found error.
+# This prevents users from typing "bank_login.php" and accessing the page directly.
+RewriteCond %{THE_REQUEST} \.php [NC]
+RewriteRule ^ - [R=404,L] # Return 404 Not Found and stop processing
+
+# Rewrite clean URLs to their .php counterparts
+# This is the main rule that allows /bank_login to serve bank_login.php internally
+# without the user seeing the .php extension if they use the clean URL.
+# This rule will only be reached if the request did NOT contain .php originally.
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^([^\.]+)$ $1.php [NC,L]
