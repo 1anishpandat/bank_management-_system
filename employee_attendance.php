@@ -8,7 +8,7 @@ if (!isset($_SESSION['employee_id'])) {
     exit();
 }
 
-// Get employee and bank details
+// Get employee and bank details (These variables are from the original code and might not be directly used in this specific file's display logic if the primary purpose is attendance/salary management for all employees. Kept for context.)
 $employee_id = $_SESSION['employee_id'];
 $stmt = $conn->prepare("SELECT * FROM employee WHERE employee_id = ?");
 $stmt->bind_param("i", $employee_id);
@@ -34,6 +34,7 @@ $attendance_summary_for_display = null;
 $employee_attendance_records = [];
 $view_month = date('n');
 $view_year = date('Y');
+
 class EmployeeAttendance {
     private $conn;
     
@@ -306,14 +307,6 @@ class EmployeeAttendance {
 
 // Initialize attendance system
 $attendance = new EmployeeAttendance($conn);
-
-// Message variable to display feedback to the user
-$message = '';
-$employee_details_result = null;
-$salary_details_for_display = null;
-$attendance_summary_for_display = null;
-$employee_attendance_records = [];
-
 
 // Check if form submitted
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -592,7 +585,7 @@ include 'sidebar.php';
             background-color: #fdfdfd;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
             transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-            display: none; /* Hidden by default */
+            display: none; /* Hidden by default - Managed by JS active class */
         }
         .section.active {
             display: block; /* Shown when active */
@@ -906,33 +899,13 @@ include 'sidebar.php';
                 align-items: center;
             }
         }
-/* Only force visibility when sections have the active class */
-#view-employee-data-section.active,
-#recent-attendance-section.active {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    height: auto !important;
-    overflow: visible !important;
-}
-
-/* Prevent form submissions from interfering with section visibility */
-#view-employee-data-section.active {
-    transition: none !important;
-    animation: none !important;
-}
-
-#recent-attendance-section.active {
-    transition: none !important;
-    animation: none !important;
-}
-
-/* Ensure sections can still be hidden when not active */
-#view-employee-data-section:not(.active),
-#recent-attendance-section:not(.active) {
-    /* Allow normal hiding behavior */
-    display: none;
-}
+        /* CSS for section visibility. JavaScript will add/remove the 'active' class. */
+        .section {
+            display: none; /* Hidden by default */
+        }
+        .section.active {
+            display: block; /* Shown when 'active' class is present */
+        }
 
     </style>
 </head>
@@ -1116,197 +1089,145 @@ include 'sidebar.php';
             </form>
         </div>
 
-        <div class="section active" id="view-employee-data-section">
-    <h2>View Employee Details (Salary & Attendance Summary)</h2>
-    <form method="post" id="employee-data-form">
-        <input type="hidden" name="action" value="view_employee_data">
-        <div class="form-group">
-            <label for="view_employee_id">Employee ID:</label>
-            <input type="number" name="view_employee_id" id="view_employee_id" required 
-                   value="<?php echo isset($_POST['view_employee_id']) ? htmlspecialchars($_POST['view_employee_id']) : ''; ?>">
-        </div>
-        <div class="form-group">
-            <label for="view_month">Month:</label>
-            <select name="view_month" id="view_month" required>
-                <?php for ($m = 1; $m <= 12; $m++): ?>
-                    <option value="<?php echo $m; ?>" 
-                        <?php echo (isset($_POST['view_month']) ? $_POST['view_month'] : date('n')) == $m ? 'selected' : ''; ?>>
-                        <?php echo date('F', mktime(0, 0, 0, $m, 10)); ?>
-                    </option>
-                <?php endfor; ?>
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="view_year">Year:</label>
-            <input type="number" name="view_year" id="view_year" required 
-                   value="<?php echo isset($_POST['view_year']) ? htmlspecialchars($_POST['view_year']) : date('Y'); ?>">
-        </div>
-        <div class="btn-container">
-            <button type="submit" class="action-btn">View Employee Data</button>
-            <button type="button" id="clear-results-btn" class="action-btn" style="background-color: #e74c3c;">Clear Results</button>
-        </div>
-    </form>
+        <div class="section" id="view-employee-data-section">
+            <h2>View Employee Details (Salary & Attendance Summary)</h2>
+            <form method="post" id="employee-data-form">
+                <input type="hidden" name="action" value="view_employee_data">
+                <div class="form-group">
+                    <label for="view_employee_id">Employee ID:</label>
+                    <input type="number" name="view_employee_id" id="view_employee_id" required 
+                           value="<?php echo isset($_POST['view_employee_id']) ? htmlspecialchars($_POST['view_employee_id']) : ''; ?>">
+                </div>
+                <div class="form-group">
+                    <label for="view_month">Month:</label>
+                    <select name="view_month" id="view_month" required>
+                        <?php for ($m = 1; $m <= 12; $m++): ?>
+                            <option value="<?php echo $m; ?>" 
+                                <?php echo (isset($_POST['view_month']) ? $_POST['view_month'] : date('n')) == $m ? 'selected' : ''; ?>>
+                                <?php echo date('F', mktime(0, 0, 0, $m, 10)); ?>
+                            </option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="view_year">Year:</label>
+                    <input type="number" name="view_year" id="view_year" required 
+                           value="<?php echo isset($_POST['view_year']) ? htmlspecialchars($_POST['view_year']) : date('Y'); ?>">
+                </div>
+                <div class="btn-container">
+                    <button type="submit" class="action-btn">View Employee Data</button>
+                    <button type="button" id="clear-results-btn" class="action-btn" style="background-color: #e74c3c;">Clear Results</button>
+                </div>
+            </form>
 
-    <?php if (isset($employee_details_result) && $employee_details_result): ?>
-        <div class="data-display" id="employee-data-results">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>Employee Profile</h3>
-                <button type="button" class="close-results-btn" style="background: none; border: none; cursor: pointer; font-size: 1.5em;">×</button>
+            <div class="data-display" id="employee-data-results">
+                <?php if (isset($employee_details_result) && $employee_details_result): ?>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3>Employee Profile</h3>
+                        <button type="button" class="close-results-btn" style="background: none; border: none; cursor: pointer; font-size: 1.5em;">&times;</button>
+                    </div>
+                    <p><strong>Employee ID:</strong> <?php echo htmlspecialchars($employee_details_result['employee_id']); ?></p>
+                    <p><strong>Name:</strong> <?php echo htmlspecialchars($employee_details_result['employees_first_name'] . ' ' . $employee_details_result['employees_last_name']); ?></p>
+                    <p><strong>Job Title:</strong> <?php echo htmlspecialchars($employee_details_result['employees_job_title'] ?? 'N/A'); ?></p>
+                    <p><strong>Department:</strong> <?php echo htmlspecialchars($employee_details_result['employees_department'] ?? 'N/A'); ?></p>
+
+                    <?php if (isset($salary_details_for_display) && $salary_details_for_display): ?>
+                        <h3>Current Salary Structure</h3>
+                        <p><strong>Basic Salary:</strong> $<?php echo number_format($salary_details_for_display['basic_salary'], 2); ?></p>
+                        <p><strong>HRA:</strong> $<?php echo number_format($salary_details_for_display['hra'], 2); ?></p>
+                        <p><strong>DA:</strong> $<?php echo number_format($salary_details_for_display['da'], 2); ?></p>
+                        <p><strong>Allowances:</strong> $<?php echo number_format($salary_details_for_display['allowances'], 2); ?></p>
+                        <p><strong>Deductions:</strong> $<?php echo number_format($salary_details_for_display['deductions'], 2); ?></p>
+                        <p><strong>Tax:</strong> $<?php echo number_format($salary_details_for_display['tax'], 2); ?></p>
+                        <p><strong>Effective From:</strong> <?php echo htmlspecialchars($salary_details_for_display['effective_from']); ?></p>
+                    <?php else: ?>
+                        <p>No current salary structure found for this employee.</p>
+                    <?php endif; ?>
+
+                    <?php if (isset($attendance_summary_for_display) && $attendance_summary_for_display): ?>
+                        <h3>Attendance Summary (<?php echo date('F', mktime(0, 0, 0, $view_month, 10)) . ' ' . $view_year; ?>)</h3>
+                        <p><strong>Present Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['present_days']); ?></p>
+                        <p><strong>Absent Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['absent_days']); ?></p>
+                        <p><strong>Half Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['half_days']); ?></p>
+                        <p><strong>Leave Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['leave_days']); ?></p>
+                        <p><strong>Holiday Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['holiday_days']); ?></p>
+                        <p><strong>Total Entries:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['total_entries']); ?></p>
+                    <?php else: ?>
+                        <p>No attendance summary found for the selected period.</p>
+                    <?php endif; ?>
+
+                    <?php if (!empty($employee_attendance_records)): ?>
+                        <h3>Detailed Attendance Records (<?php echo date('F', mktime(0, 0, 0, $view_month, 10)) . ' ' . $view_year; ?>)</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Check-in</th>
+                                    <th>Check-out</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($employee_attendance_records as $record): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($record['date']); ?></td>
+                                    <td><?php echo htmlspecialchars($record['status']); ?></td>
+                                    <td><?php echo htmlspecialchars($record['check_in'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($record['check_out'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($record['notes'] ?? '-'); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p>No detailed attendance records found for this employee for the selected month/year.</p>
+                    <?php endif; ?>
+                <?php endif; ?>
             </div>
-            <p><strong>Employee ID:</strong> <?php echo htmlspecialchars($employee_details_result['employee_id']); ?></p>
-            <p><strong>Name:</strong> <?php echo htmlspecialchars($employee_details_result['employees_first_name'] . ' ' . $employee_details_result['employees_last_name']); ?></p>
-            <p><strong>Job Title:</strong> <?php echo htmlspecialchars($employee_details_result['employees_job_title'] ?? 'N/A'); ?></p>
-            <p><strong>Department:</strong> <?php echo htmlspecialchars($employee_details_result['employees_department'] ?? 'N/A'); ?></p>
-
-            <?php if (isset($salary_details_for_display) && $salary_details_for_display): ?>
-                <h3>Current Salary Structure</h3>
-                <p><strong>Basic Salary:</strong> $<?php echo number_format($salary_details_for_display['basic_salary'], 2); ?></p>
-                <p><strong>HRA:</strong> $<?php echo number_format($salary_details_for_display['hra'], 2); ?></p>
-                <p><strong>DA:</strong> $<?php echo number_format($salary_details_for_display['da'], 2); ?></p>
-                <p><strong>Allowances:</strong> $<?php echo number_format($salary_details_for_display['allowances'], 2); ?></p>
-                <p><strong>Deductions:</strong> $<?php echo number_format($salary_details_for_display['deductions'], 2); ?></p>
-                <p><strong>Tax:</strong> $<?php echo number_format($salary_details_for_display['tax'], 2); ?></p>
-                <p><strong>Effective From:</strong> <?php echo htmlspecialchars($salary_details_for_display['effective_from']); ?></p>
-            <?php else: ?>
-                <p>No current salary structure found for this employee.</p>
-            <?php endif; ?>
-
-            <?php if (isset($attendance_summary_for_display) && $attendance_summary_for_display): ?>
-                <h3>Attendance Summary (<?php echo date('F', mktime(0, 0, 0, $view_month, 10)) . ' ' . $view_year; ?>)</h3>
-                <p><strong>Present Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['present_days']); ?></p>
-                <p><strong>Absent Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['absent_days']); ?></p>
-                <p><strong>Half Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['half_days']); ?></p>
-                <p><strong>Leave Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['leave_days']); ?></p>
-                <p><strong>Holiday Days:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['holiday_days']); ?></p>
-                <p><strong>Total Entries:</strong> <?php echo htmlspecialchars($attendance_summary_for_display['total_entries']); ?></p>
-            <?php else: ?>
-                <p>No attendance summary found for the selected period.</p>
-            <?php endif; ?>
-
-            <?php if (!empty($employee_attendance_records)): ?>
-                <h3>Detailed Attendance Records (<?php echo date('F', mktime(0, 0, 0, $view_month, 10)) . ' ' . $view_year; ?>)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Status</th>
-                            <th>Check-in</th>
-                            <th>Check-out</th>
-                            <th>Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($employee_attendance_records as $record): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($record['date']); ?></td>
-                            <td><?php echo htmlspecialchars($record['status']); ?></td>
-                            <td><?php echo htmlspecialchars($record['check_in'] ?? '-'); ?></td>
-                            <td><?php echo htmlspecialchars($record['check_out'] ?? '-'); ?></td>
-                            <td><?php echo htmlspecialchars($record['notes'] ?? '-'); ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php else: ?>
-                <p>No detailed attendance records found for this employee for the selected month/year.</p>
-            <?php endif; ?>
         </div>
-    <?php endif; ?>
-</div>
 
-<div class="section active" id="recent-attendance-section">
-    <h2>Recent Attendance Records (Global View)</h2>
-    <p>This section shows the most recent attendance entries across all employees. For specific employee attendance, use the "View Employee Details" section above or download the "Attendance Report".</p>
-    <?php
-    // Fetch and display the 10 most recent attendance records
-    $query_recent_attendance = "SELECT ea.*, e.employees_first_name, e.employees_last_name 
+        <div class="section" id="recent-attendance-section">
+            <h2>Recent Attendance Records (Global View)</h2>
+            <p>This section shows the most recent attendance entries across all employees. For specific employee attendance, use the "View Employee Details" section above or download the "Attendance Report".</p>
+            <?php
+            // Fetch and display the 10 most recent attendance records
+            $query_recent_attendance = "SELECT ea.*, e.employees_first_name, e.employees_last_name 
                                 FROM employee_attendance ea
                                 JOIN employee e ON ea.employee_id = e.employee_id
                                 ORDER BY ea.created_at DESC LIMIT 10";
-    $result_recent_attendance = $conn->query($query_recent_attendance);
+            $result_recent_attendance = $conn->query($query_recent_attendance);
 
-    if ($result_recent_attendance && $result_recent_attendance->num_rows > 0):
-    ?>
-    <table>
-        <thead>
-            <tr>
-                <th>Employee</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Check-in</th>
-                <th>Check-out</th>
-                <th>Notes</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php while ($record = $result_recent_attendance->fetch_assoc()): ?>
-            <tr>
-                <td><?php echo htmlspecialchars($record['employees_first_name'] . ' ' . $record['employees_last_name'] . ' (ID: ' . $record['employee_id'] . ')'); ?></td>
-                <td><?php echo htmlspecialchars($record['date']); ?></td>
-                <td><?php echo htmlspecialchars($record['status']); ?></td>
-                <td><?php echo htmlspecialchars($record['check_in'] ?? '-'); ?></td>
-                <td><?php echo htmlspecialchars($record['check_out'] ?? '-'); ?></td>
-                <td><?php echo htmlspecialchars($record['notes'] ?? '-'); ?></td>
-            </tr>
-            <?php endwhile; ?>
-        </tbody>
-    </table>
-    <?php else: ?>
-        <p>No recent attendance records found.</p>
-    <?php endif; ?>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Clear results button functionality
-    const clearResultsBtn = document.getElementById('clear-results-btn');
-    if (clearResultsBtn) {
-        clearResultsBtn.addEventListener('click', function() {
-            document.getElementById('employee-data-form').reset();
-            const resultsDiv = document.getElementById('employee-data-results');
-            if (resultsDiv) resultsDiv.style.display = 'none';
-        });
-    }
-
-    // Close results button functionality
-    const closeResultsBtn = document.querySelector('.close-results-btn');
-    if (closeResultsBtn) {
-        closeResultsBtn.addEventListener('click', function() {
-            const resultsDiv = document.getElementById('employee-data-results');
-            if (resultsDiv) resultsDiv.style.display = 'none';
-        });
-    }
-
-    // Ensure section stays visible after form submission
-    const form = document.getElementById('employee-data-form');
-    if (form) {
-        form.addEventListener('submit', function() {
-            document.getElementById('view-employee-data-section').classList.add('active');
-        });
-    }
-});
-
-// Prevent section from collapsing
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('employee-data-form');
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            // Keep the section active after form submission
-            document.getElementById('view-employee-data-section').classList.add('active');
-            
-            // If you're using AJAX, prevent default form submission
-            // e.preventDefault();
-            // Handle form submission via AJAX instead
-        });
-    }
-    
-    // Make sure all sections stay visible unless explicitly toggled
-    const sections = document.querySelectorAll('.section');
-    sections.forEach(section => {
-        section.classList.add('active');
-    });
-});
-</script>
+            if ($result_recent_attendance && $result_recent_attendance->num_rows > 0):
+            ?>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Check-in</th>
+                        <th>Check-out</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php while ($record = $result_recent_attendance->fetch_assoc()): ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($record['employees_first_name'] . ' ' . $record['employees_last_name'] . ' (ID: ' . $record['employee_id'] . ')'); ?></td>
+                        <td><?php echo htmlspecialchars($record['date']); ?></td>
+                        <td><?php echo htmlspecialchars($record['status']); ?></td>
+                        <td><?php echo htmlspecialchars($record['check_in'] ?? '-'); ?></td>
+                        <td><?php echo htmlspecialchars($record['check_out'] ?? '-'); ?></td>
+                        <td><?php echo htmlspecialchars($record['notes'] ?? '-'); ?></td>
+                    </tr>
+                    <?php endwhile; ?>
+                </tbody>
+            </table>
+            <?php else: ?>
+                <p>No recent attendance records found.</p>
+            <?php endif; ?>
+        </div>
 
         <div class="section" id="attendance-report-section">
             <h2>Generate Attendance Report (CSV)</h2>
@@ -1400,7 +1321,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const allSections = document.querySelectorAll('.section');
             const dropdownButtons = document.querySelectorAll('.dropdown-button');
             const dropdownLinks = document.querySelectorAll('.dropdown-content a');
-            const messageDiv = document.querySelector('.message'); // Get the message div
+            const messageDiv = document.querySelector('.message');
+            
+            const viewEmployeeDataSection = document.getElementById('view-employee-data-section');
+            const employeeDataForm = document.getElementById('employee-data-form');
+            const employeeDataResults = document.getElementById('employee-data-results');
+            const clearResultsBtn = document.getElementById('clear-results-btn');
+
 
             // Function to hide all sections and remove 'active' class
             function hideAllSections() {
@@ -1409,25 +1336,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
-            // Initially hide all sections except if there's a message displayed
-            // The PHP handles message display, so if $message is set, the div will be present.
-            // We want to keep the message visible if it's there on page load.
-            if (!messageDiv) { // Only hide sections if no PHP message is present on load
-                hideAllSections();
-            } else {
-                // If a message is present (e.g., after form submission), 
-                // we should consider showing the relevant section or keeping all hidden as before.
-                // For simplicity, if a message is present, we'll keep all sections hidden initially
-                // and rely on user interaction to reveal them.
-                 hideAllSections();
-                 // If you want to show a specific section after a form submission with a message,
-                 // you would need to pass an indicator from PHP to JS.
-                 // For now, it will just show the message and keep sections hidden.
+            // Function to set an active section
+            function setActiveSection(targetElement) {
+                hideAllSections(); // Hide all others first
+                if (targetElement) {
+                    targetElement.classList.add('active'); // Add active to the target
+                }
+            }
+
+            // --- Initial page load logic ---
+            // Hide all sections on page load to ensure nothing is visible initially by default.
+            // Content will be revealed upon dropdown link click.
+            hideAllSections();
+
+            // Also, ensure the results div is hidden by default on page load/refresh
+            if (employeeDataResults) {
+                employeeDataResults.style.display = 'none';
+                employeeDataResults.innerHTML = ''; // Clear any potential lingering content
             }
             
-
+            // Handle dropdown button clicks to toggle dropdown content
             dropdownButtons.forEach(button => {
-                // Toggle dropdown visibility on button click
                 button.addEventListener('click', function(event) {
                     event.stopPropagation(); // Prevent document click from closing immediately
                     const dropdownContent = this.nextElementSibling;
@@ -1445,13 +1374,13 @@ document.addEventListener('DOMContentLoaded', function() {
             document.addEventListener('click', function(event) {
                 dropdownButtons.forEach(button => {
                     const dropdownContent = button.nextElementSibling;
-                    if (!button.contains(event.target) && !dropdownContent.contains(event.target)) {
+                    if (dropdownContent && !button.contains(event.target) && !dropdownContent.contains(event.target)) {
                         dropdownContent.style.display = 'none';
                     }
                 });
             });
 
-            // Handle dropdown link clicks
+            // Handle dropdown link clicks to show/hide sections
             dropdownLinks.forEach(anchor => {
                 anchor.addEventListener('click', function (e) {
                     e.preventDefault(); // Prevent default jump behavior
@@ -1460,11 +1389,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     const targetElement = document.querySelector(targetId);
 
                     if (targetElement) {
-                        // Hide all sections first
-                        hideAllSections();
+                        setActiveSection(targetElement); // Show the target section by adding 'active' class
 
-                        // Show the target section by adding 'active' class
-                        targetElement.classList.add('active');
+                        // If navigating to the employee data section, hide its results initially
+                        if (targetId === '#view-employee-data-section' && employeeDataResults) {
+                            employeeDataResults.style.display = 'none';
+                            employeeDataResults.innerHTML = ''; // Clear previous results
+                        }
 
                         // Scroll to the target section
                         window.scrollTo({
@@ -1476,6 +1407,83 @@ document.addEventListener('DOMContentLoaded', function() {
                         this.closest('.dropdown-content').style.display = 'none';
                     }
                 });
+            });
+
+            // --- Form Submission Handler for "View Employee Data" (AJAX) ---
+            if (employeeDataForm) {
+                employeeDataForm.addEventListener('submit', function(event) {
+                    event.preventDefault(); // Prevent the default form submission (NO PAGE RELOAD!)
+
+                    // Ensure the parent section is active (it should be if user navigated via dropdown)
+                    // This is crucial: if this section was hidden, it needs to be visible to show results.
+                    viewEmployeeDataSection.classList.add('active');
+
+                    const formData = new FormData(employeeDataForm);
+                    const phpEndpoint = window.location.href; // The current PHP file will handle the POST request
+
+                    // Optional: Show a loading indicator
+                    if (employeeDataResults) {
+                        employeeDataResults.innerHTML = '<p style="text-align: center; padding: 20px;">Loading data...</p>';
+                        employeeDataResults.style.display = 'block'; // Show loading message
+                    }
+
+                    fetch(phpEndpoint, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.text(); // Expecting HTML back from PHP
+                    })
+                    .then(html => {
+                        // PHP returns the whole page, so we need to extract the results div content
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const fetchedResultsDiv = doc.getElementById('employee-data-results');
+
+                        if (employeeDataResults && fetchedResultsDiv) {
+                            employeeDataResults.innerHTML = fetchedResultsDiv.innerHTML; // Populate results with content from the fetched div
+                            employeeDataResults.style.display = 'block'; // Show results here!
+                        } else if (employeeDataResults) {
+                             // If no results div was found in the fetched HTML, clear and display a message
+                            employeeDataResults.innerHTML = '<p style="color: red;">No data found for the provided Employee ID, Month, and Year.</p>';
+                            employeeDataResults.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching employee data:', error);
+                        if (employeeDataResults) {
+                            employeeDataResults.innerHTML = '<p style="color: red;">Failed to load data. Please check Employee ID, Month, and Year.</p>';
+                            employeeDataResults.style.display = 'block';
+                        }
+                    });
+                });
+            }
+
+            // Clear Results button functionality
+            if (clearResultsBtn) {
+                clearResultsBtn.addEventListener('click', function() {
+                    if (employeeDataForm) {
+                        employeeDataForm.reset();
+                    }
+                    if (employeeDataResults) {
+                        employeeDataResults.style.display = 'none'; // Hide results
+                        employeeDataResults.innerHTML = ''; // Clear content
+                    }
+                });
+            }
+
+            // Close Results button functionality (using event delegation for dynamically loaded content)
+            // Using event delegation because the button might be inside content loaded via AJAX
+            document.addEventListener('click', function(event) {
+                if (event.target.classList.contains('close-results-btn')) {
+                    if (employeeDataResults) {
+                        employeeDataResults.style.display = 'none';
+                        employeeDataResults.innerHTML = '';
+                    }
+                }
             });
         });
         
