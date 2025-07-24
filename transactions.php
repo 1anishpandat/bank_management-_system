@@ -2,38 +2,36 @@
 session_start();
 require 'db_connect.php';
 
+// Define the sanitize_input function
+if (!function_exists('sanitize_input')) {
+    function sanitize_input($data) {
+        $data = trim($data);
+        $data = stripslashes($data);
+        $data = htmlspecialchars($data);
+        return $data;
+    }
+}
+
 // Authentication check
 if (!isset($_SESSION['employee_id'])) {
     header("Location: bank_login.php");
     exit();
 }
 
-// Simple sanitization function
-function sanitize($data) {
-    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
-}
+// Get logged-in employee's bank_id
+$loggedInBankId = $_SESSION['bank_id'];
 
-// Initialize filter variables from GET parameters
-$account_filter = isset($_GET['account']) ? sanitize($_GET['account']) : '';
-$type_filter = isset($_GET['type']) ? sanitize($_GET['type']) : '';
-$from_date = isset($_GET['from']) ? sanitize($_GET['from']) : '';
-$to_date = isset($_GET['to']) ? sanitize($_GET['to']) : '';
-$customer_filter = isset($_GET['customer']) ? sanitize($_GET['customer']) : '';
-
-// Check if account exists
-$account_exists = false;
-if (!empty($account_filter)) {
-    $check_account = $conn->prepare("SELECT COUNT(*) as count FROM accounts WHERE account_number = ?");
-    $check_account->bind_param('s', $account_filter);
-    $check_account->execute();
-    $account_exists = $check_account->get_result()->fetch_assoc()['count'] > 0;
-    $check_account->close();
-}
+// Initialize filter variables
+$account_filter = isset($_GET['account']) ? sanitize_input($_GET['account']) : '';
+$type_filter = isset($_GET['type']) ? sanitize_input($_GET['type']) : '';
+$from_date = isset($_GET['from']) ? sanitize_input($_GET['from']) : '';
+$to_date = isset($_GET['to']) ? sanitize_input($_GET['to']) : '';
+$customer_filter = isset($_GET['customer']) ? sanitize_input($_GET['customer']) : '';
 
 // Build WHERE conditions for filters
-$where_conditions = [];
-$params = [];
-$param_types = '';
+$where_conditions = ["c.bank_id = ?"];
+$params = [$loggedInBankId];
+$param_types = 'i';
 
 if (!empty($account_filter)) {
     $where_conditions[] = "a.account_number LIKE ?";
@@ -43,14 +41,14 @@ if (!empty($account_filter)) {
 
 if (!empty($type_filter)) {
     if ($type_filter == 'INCOME') {
-        $where_conditions[] = "(t.transaction_type = ? OR (t.transaction_type IS NULL AND t.category_id = 1))";
+        $where_conditions[] = "(t.transaction_type = 'INCOME' OR t.category_id = 1)";
     } elseif ($type_filter == 'EXPENSE') {
-        $where_conditions[] = "(t.transaction_type = ? OR (t.transaction_type IS NULL AND t.category_id = 2))";
+        $where_conditions[] = "(t.transaction_type = 'EXPENSE' OR t.category_id = 2)";
     } else {
         $where_conditions[] = "t.transaction_type = ?";
+        $params[] = $type_filter;
+        $param_types .= 's';
     }
-    $params[] = $type_filter;
-    $param_types .= 's';
 }
 
 if (!empty($from_date)) {
@@ -72,12 +70,7 @@ if (!empty($customer_filter)) {
     $param_types .= 'ss';
 }
 
-// If no filters are set, show all transactions
-if (empty($where_conditions)) {
-    $where_clause = "1=1";
-} else {
-    $where_clause = implode(' AND ', $where_conditions);
-}
+$where_clause = implode(' AND ', $where_conditions);
 
 // Pagination setup
 $limit = 10;
@@ -87,18 +80,21 @@ $start = ($page > 1) ? ($page * $limit) - $limit : 0;
 // Get total number of transactions
 $total_query = "SELECT COUNT(*) as total FROM transactions t
                 JOIN accounts a ON t.account_id = a.account_id
-                JOIN customers c ON t.customer_id = c.customer_id
+                JOIN customers c ON a.user_id = c.customer_id
                 WHERE $where_clause";
 
-$stmt = $conn->prepare($total_query);
-if (!empty($params)) {
-    $stmt->bind_param($param_types, ...$params);
+$stmt_total = $conn->prepare($total_query);
+if ($stmt_total === false) {
+    error_log("Prepare failed for total count: " . $conn->error);
+    $total = 0;
+} else {
+    $stmt_total->bind_param($param_types, ...$params);
+    $stmt_total->execute();
+    $total_result = $stmt_total->get_result();
+    $total = $total_result->fetch_assoc()['total'];
+    $stmt_total->close();
 }
-$stmt->execute();
-$total_result = $stmt->get_result();
-$total = $total_result->fetch_assoc()['total'];
 $pages = ceil($total / $limit);
-$stmt->close();
 
 // Get transactions with pagination
 $query = "SELECT t.*, a.account_number, at.type_name as account_type,
@@ -108,7 +104,7 @@ $query = "SELECT t.*, a.account_number, at.type_name as account_type,
           FROM transactions t
           JOIN accounts a ON t.account_id = a.account_id
           JOIN account_types at ON a.account_type_id = at.type_id
-          JOIN customers c ON t.customer_id = c.customer_id
+          JOIN customers c ON a.user_id = c.customer_id
           LEFT JOIN categories cat ON t.category_id = cat.category_id
           LEFT JOIN employee e ON t.approved_by = e.employee_id
           WHERE $where_clause
@@ -116,35 +112,48 @@ $query = "SELECT t.*, a.account_number, at.type_name as account_type,
           LIMIT ?, ?";
 
 // Add pagination parameters
-$pagination_params = array_slice($params, 0); // Copy original params
+$pagination_params = $params;
 $pagination_params[] = $start;
 $pagination_params[] = $limit;
 $pagination_param_types = $param_types . 'ii';
 
-$stmt = $conn->prepare($query);
-if (!empty($pagination_param_types)) {
-    $stmt->bind_param($pagination_param_types, ...$pagination_params);
+$fetched_transactions_array = [];
+
+$stmt_transactions = $conn->prepare($query);
+if ($stmt_transactions === false) {
+    error_log("Prepare failed for main query: " . $conn->error);
+} else {
+    $stmt_transactions->bind_param($pagination_param_types, ...$pagination_params);
+    $stmt_transactions->execute();
+    $transactions_result = $stmt_transactions->get_result();
+    
+    while ($row = $transactions_result->fetch_assoc()) {
+        $fetched_transactions_array[] = $row;
+    }
+    $transactions_result->free();
+    $stmt_transactions->close();
 }
-$stmt->execute();
-$transactions = $stmt->get_result();
 
 // Get summary statistics
 $summary_query = "SELECT 
     COUNT(*) as total_count,
-    SUM(CASE WHEN (t.transaction_type = 'INCOME' OR (t.transaction_type IS NULL AND t.category_id = 1)) THEN t.amount ELSE 0 END) as total_deposits,
-    SUM(CASE WHEN (t.transaction_type = 'EXPENSE' OR (t.transaction_type IS NULL AND t.category_id = 2)) THEN t.amount ELSE 0 END) as total_withdrawals
+    SUM(CASE WHEN (t.transaction_type = 'INCOME' OR t.category_id = 1) THEN t.amount ELSE 0 END) as total_deposits,
+    SUM(CASE WHEN (t.transaction_type = 'EXPENSE' OR t.category_id = 2) THEN t.amount ELSE 0 END) as total_withdrawals
     FROM transactions t
     JOIN accounts a ON t.account_id = a.account_id
-    JOIN customers c ON t.customer_id = c.customer_id
+    JOIN customers c ON a.user_id = c.customer_id
     WHERE $where_clause";
 
 $stmt_summary = $conn->prepare($summary_query);
-if (!empty($param_types)) {
+if ($stmt_summary === false) {
+    error_log("Prepare failed for summary query: " . $conn->error);
+    $summary = ['total_count' => 0, 'total_deposits' => 0, 'total_withdrawals' => 0];
+} else {
     $stmt_summary->bind_param($param_types, ...$params);
+    $stmt_summary->execute();
+    $summary = $stmt_summary->get_result()->fetch_assoc();
+    $stmt_summary->close();
 }
-$stmt_summary->execute();
-$summary = $stmt_summary->get_result()->fetch_assoc();
-$stmt_summary->close();
 
 include 'header.php';
 ?>
@@ -158,18 +167,10 @@ include 'header.php';
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .stat-card-2 {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        .stat-card-3 {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        .transaction-row:hover {
-            background-color: #f8fafc;
-        }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .stat-card-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .stat-card-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .transaction-row:hover { background-color: #f8fafc; }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -177,23 +178,12 @@ include 'header.php';
     <div class="flex justify-between items-center mb-8">
         <h1 class="text-3xl font-bold text-gray-800">Transaction History</h1>
         <div class="flex space-x-4">
-            <a href="transaction_processing.php" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center">
+            <a href="transaction_processing" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center">
                 <i class="fas fa-exchange-alt mr-2"></i> New Transaction
             </a>
         </div>
     </div>
 
-    <!-- Account Not Found Warning -->
-    <?php if (!empty($account_filter) && !$account_exists): ?>
-    <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-        <div class="flex items-center">
-            <i class="fas fa-exclamation-triangle mr-2"></i>
-            <span>Account <strong><?= htmlspecialchars($account_filter) ?></strong> not found.</span>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="stat-card text-white p-6 rounded-lg shadow-lg">
             <div class="flex items-center justify-between">
@@ -232,7 +222,6 @@ include 'header.php';
         </div>
     </div>
 
-    <!-- Filters -->
     <div class="bg-white p-6 rounded-lg shadow mb-8">
         <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
@@ -272,7 +261,6 @@ include 'header.php';
         </form>
     </div>
 
-    <!-- Transactions Table -->
     <div class="bg-white rounded-lg shadow overflow-hidden">
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -288,10 +276,10 @@ include 'header.php';
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    <?php if ($transactions->num_rows > 0): ?>
-                        <?php while($transaction = $transactions->fetch_assoc()): 
+                    <?php if (!empty($fetched_transactions_array)): ?>
+                        <?php foreach($fetched_transactions_array as $transaction): 
                             $display_type = $transaction['transaction_type'] ?? ($transaction['category_type'] ?? 'Unknown');
-                            $is_income = ($display_type == 'INCOME' || $transaction['category_id'] == 1);
+                            $is_income = (strtoupper($display_type) == 'INCOME' || $transaction['category_id'] == 1);
                         ?>
                         <tr class="transaction-row">
                             <td class="py-4 px-4 whitespace-nowrap">
@@ -338,15 +326,11 @@ include 'header.php';
                                 </div>
                             </td>
                         </tr>
-                        <?php endwhile; ?>
+                        <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
                             <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-                                <?php if (!empty($account_filter) && !$account_exists): ?>
-                                    Account not found. Please check the account number.
-                                <?php else: ?>
-                                    No transactions found matching your criteria.
-                                <?php endif; ?>
+                                No transactions found matching your criteria.
                             </td>
                         </tr>
                     <?php endif; ?>
@@ -354,7 +338,6 @@ include 'header.php';
             </table>
         </div>
         
-        <!-- Pagination -->
         <?php if ($pages > 1): ?>
         <div class="px-6 py-4 border-t border-gray-200">
             <div class="flex items-center justify-between">
@@ -386,8 +369,7 @@ include 'header.php';
 
 <script>
 function showTransactionDetails(id) {
-    // You can implement a modal or redirect to a details page here
-    window.location.href = 'transaction_details.php?id=' + id;
+    window.location.href = 'transaction_details?id=' + id;
 }
 </script>
 

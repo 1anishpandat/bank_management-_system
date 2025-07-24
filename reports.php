@@ -2,94 +2,113 @@
 session_start();
 require 'db_connect.php';
 
-// Authentication check
-if (!isset($_SESSION['employee_id'])) {
+// Strict authentication check
+if (!isset($_SESSION['employee_id']) || !isset($_SESSION['bank_id'])) {
     $_SESSION['redirect_url'] = $_SERVER['REQUEST_URI'];
     header("Location: bank_login.php");
     exit();
 }
+
+// Get the logged-in bank ID
+$loggedInBankId = (int)$_SESSION['bank_id'];
+
+// Debug output - verify we have the correct bank ID
+error_log("Current Bank ID: " . $loggedInBankId);
 
 // Default report parameters
 $report_type = $_GET['report'] ?? 'daily_transactions';
 $start_date = $_GET['start_date'] ?? date('Y-m-01');
 $end_date = $_GET['end_date'] ?? date('Y-m-d');
 
+// Validate dates
+if (!strtotime($start_date) || !strtotime($end_date)) {
+    die("Invalid date parameters");
+}
+
 // Generate reports
 $report_data = [];
 $report_title = '';
-$columns = [];
 
-if ($report_type == 'daily_transactions') {
-    $report_title = "Daily Transactions: " . date('F j, Y', strtotime($start_date)) . " to " . date('F j, Y', strtotime($end_date));
-    $columns = ['Date', 'Account', 'Customer', 'Type', 'Category', 'Amount'];
-    
-    $stmt = $conn->prepare("
-        SELECT t.transaction_id, t.transaction_date, t.amount, t.transaction_type, 
-               a.account_number, c.first_name, c.last_name, cat.category_name
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.account_id
-        JOIN customers c ON a.user_id = c.customer_id
-        JOIN transaction_categories cat ON t.category_id = cat.category_id
-        WHERE t.transaction_date BETWEEN ? AND ?
-        ORDER BY t.transaction_date DESC, t.transaction_id DESC
-    ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $report_data = $result->fetch_all(MYSQLI_ASSOC);
-    
-} elseif ($report_type == 'cash_flow') {
-    $report_title = "Cash Flow Report: " . date('F j, Y', strtotime($start_date)) . " to " . date('F j, Y', strtotime($end_date));
-    $columns = ['Date', 'Total Deposits', 'Total Withdrawals', 'Net Flow'];
-    
-    $stmt = $conn->prepare("
-        SELECT 
-            DATE(t.transaction_date) as date,
-            SUM(CASE WHEN t.transaction_type = 'INCOME' THEN t.amount ELSE 0 END) as total_deposits,
-            SUM(CASE WHEN t.transaction_type = 'EXPENSE' THEN t.amount ELSE 0 END) as total_withdrawals,
-            SUM(CASE WHEN t.transaction_type = 'INCOME' THEN t.amount ELSE -t.amount END) as net_flow
-        FROM transactions t
-        WHERE t.transaction_date BETWEEN ? AND ?
-        GROUP BY DATE(t.transaction_date)
-        ORDER BY DATE(t.transaction_date) DESC
-    ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $report_data = $result->fetch_all(MYSQLI_ASSOC);
-    
-} elseif ($report_type == 'account_balances') {
-    $report_title = "Account Balances as of " . date('F j, Y', strtotime($end_date));
-    $columns = ['Account Number', 'Account Type', 'Customer', 'Email', 'Date Opened', 'Balance'];
-    
-    $stmt = $conn->prepare("
-        SELECT 
-            a.account_number,
-            at.type_name as account_type,
-            a.balance,
-            c.first_name,
-            c.last_name,
-            c.email,
-            a.created_at as date_opened
-        FROM accounts a
-        JOIN account_types at ON a.account_type_id = at.type_id
-        JOIN customers c ON a.user_id = c.customer_id
-        WHERE a.created_at <= ? AND a.is_active = 1
-        ORDER BY a.balance DESC
-    ");
-    $stmt->bind_param("s", $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $report_data = $result->fetch_all(MYSQLI_ASSOC);
+try {
+    if ($report_type == 'daily_transactions') {
+        $report_title = "Daily Transactions: " . date('F j, Y', strtotime($start_date)) . " to " . date('F j, Y', strtotime($end_date));
+        
+        $query = "SELECT t.transaction_id, t.transaction_date, t.amount, t.transaction_type, 
+                         a.account_number, c.first_name, c.last_name, cat.category_name
+                  FROM transactions t
+                  INNER JOIN accounts a ON t.account_id = a.account_id
+                  INNER JOIN customers c ON a.user_id = c.customer_id AND c.bank_id = ?
+                  INNER JOIN transaction_categories cat ON t.category_id = cat.category_id
+                  WHERE t.transaction_date BETWEEN ? AND ?
+                  ORDER BY t.transaction_date DESC, t.transaction_id DESC";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("iss", $loggedInBankId, $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $report_data = $result->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        
+    } elseif ($report_type == 'cash_flow') {
+        $report_title = "Cash Flow Report: " . date('F j, Y', strtotime($start_date)) . " to " . date('F j, Y', strtotime($end_date));
+        
+        $query = "SELECT DATE(t.transaction_date) as date,
+                         SUM(CASE WHEN t.transaction_type = 'INCOME' THEN t.amount ELSE 0 END) as total_deposits,
+                         SUM(CASE WHEN t.transaction_type = 'EXPENSE' THEN t.amount ELSE 0 END) as total_withdrawals,
+                         SUM(CASE WHEN t.transaction_type = 'INCOME' THEN t.amount ELSE -t.amount END) as net_flow
+                  FROM transactions t
+                  INNER JOIN accounts a ON t.account_id = a.account_id
+                  INNER JOIN customers c ON a.user_id = c.customer_id AND c.bank_id = ?
+                  WHERE t.transaction_date BETWEEN ? AND ?
+                  GROUP BY DATE(t.transaction_date)
+                  ORDER BY DATE(t.transaction_date) DESC";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("iss", $loggedInBankId, $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $report_data = $result->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        
+    } elseif ($report_type == 'account_balances') {
+        $report_title = "Account Balances as of " . date('F j, Y', strtotime($end_date));
+        
+        $query = "SELECT a.account_number, at.type_name as account_type, a.balance,
+                         c.first_name, c.last_name, c.email, a.created_at as date_opened
+                  FROM accounts a
+                  INNER JOIN account_types at ON a.account_type_id = at.type_id
+                  INNER JOIN customers c ON a.user_id = c.customer_id AND c.bank_id = ?
+                  WHERE a.created_at <= ? AND a.is_active = 1
+                  ORDER BY a.balance DESC";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("is", $loggedInBankId, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $report_data = $result->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+    }
+} catch (Exception $e) {
+    error_log("Report generation error: " . $e->getMessage());
+    die("Error generating report. Please try again.");
+}
+
+// Debug output - verify filtered data
+error_log("Report Data Count: " . count($report_data));
+if (!empty($report_data)) {
+    error_log("First record bank verification: " . json_encode($report_data[0]));
 }
 
 include 'header.php';
 ?>
 
+<!-- Rest of your HTML remains the same -->
+
+<!-- Rest of your HTML remains the same -->
+
 <div class="container mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-6">Bank Reports</h1>
+    <h1 class="text-2xl font-bold mb-6">Bank Reports - <?= htmlspecialchars($_SESSION['bank_name'] ?? 'Bank') ?></h1>
     
-    <!-- Report selection form -->
     <div class="bg-white p-6 rounded shadow mb-8">
         <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -123,7 +142,6 @@ include 'header.php';
         </div>
     </div>
     
-    <!-- Report display -->
     <div class="bg-white p-6 rounded shadow">
         <h2 class="text-xl font-semibold mb-4"><?= $report_title ?></h2>
         
@@ -135,7 +153,7 @@ include 'header.php';
             
             <?php if ($report_type == 'daily_transactions'): ?>
                 <div class="overflow-x-auto">
-                <table class="min-w-full bg-white mx-auto"> 
+                    <table class="min-w-full bg-white mx-auto"> 
                         <thead>
                             <tr class="bg-gray-100">
                                 <th class="py-2 px-4 border text-left">Date</th>
@@ -167,7 +185,7 @@ include 'header.php';
                 
             <?php elseif ($report_type == 'cash_flow'): ?>
                 <div class="overflow-x-auto">
-                <table class="min-w-full bg-white mx-auto"> 
+                    <table class="min-w-full bg-white mx-auto"> 
                         <thead>
                             <tr class="bg-gray-100">
                                 <th class="py-2 px-4 border text-left">Date</th>
@@ -193,7 +211,7 @@ include 'header.php';
                 
             <?php elseif ($report_type == 'account_balances'): ?>
                 <div class="overflow-x-auto">
-                <table class="min-w-full bg-white mx-auto"> 
+                    <table class="min-w-full bg-white mx-auto"> 
                         <thead>
                             <tr class="bg-gray-100">
                                 <th class="py-2 px-4 border text-left">Account Number</th>
@@ -222,10 +240,9 @@ include 'header.php';
             
         <?php endif; ?>
         
-        <!-- Export buttons -->
         <?php if (!empty($report_data)): ?>
         <div class="mt-6 flex flex-wrap gap-3">
-            <a href="export_report?format=csv&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" 
+            <a href="export_report?format=csv&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>&bank_id=<?= $loggedInBankId ?>" 
                class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center transition-colors">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -233,7 +250,7 @@ include 'header.php';
                 Export to CSV
             </a>
             
-            <a href="export_report?format=excel&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" 
+            <a href="export_report?format=excel&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>&bank_id=<?= $loggedInBankId ?>" 
                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 flex items-center transition-colors">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -241,7 +258,7 @@ include 'header.php';
                 Export to Excel
             </a>
             
-            <a href="export_report?format=pdf&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" 
+            <a href="export_report?format=pdf&report=<?= urlencode($report_type) ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>&bank_id=<?= $loggedInBankId ?>" 
                class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 flex items-center transition-colors">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
@@ -251,7 +268,6 @@ include 'header.php';
         </div>
         <?php endif; ?>
         
-        <!-- Summary statistics -->
         <?php if (!empty($report_data)): ?>
         <div class="mt-6 bg-gray-50 p-4 rounded">
             <h3 class="text-lg font-semibold mb-2">Summary</h3>

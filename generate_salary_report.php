@@ -3,43 +3,56 @@ require 'db_connect.php';
 session_start();
 
 // Check if employee is logged in
-if (!isset($_SESSION['employee_id'])) {
+if (!isset($_SESSION['employee_id']) || !isset($_SESSION['bank_id'])) {
     header("Location: employee_login.php");
     exit();
 }
 
 $employee_id = $_SESSION['employee_id'];
+$bank_id = $_SESSION['bank_id']; // Get bank_id from session
 $report_type = $_POST['reportType'] ?? 'both';
 $month = $_POST['month'] ?? date('m');
 $year = $_POST['year'] ?? date('Y');
 $format = $_POST['format'] ?? 'pdf';
 
-// Get employee details
-$stmt = $conn->prepare("SELECT e.*, b.bank_name FROM employee e JOIN bank_details b ON e.bank_id = b.bank_id WHERE e.employee_id = ?");
-$stmt->bind_param("i", $employee_id);
+// Get employee details with bank verification
+$stmt = $conn->prepare("
+    SELECT e.*, b.bank_name 
+    FROM employee e 
+    JOIN bank_details b ON e.bank_id = b.bank_id 
+    WHERE e.employee_id = ? AND e.bank_id = ?
+");
+$stmt->bind_param("ii", $employee_id, $bank_id);
 $stmt->execute();
 $employee = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-// Get salary information for the selected period
+if (!$employee) {
+    die("Employee not found or doesn't belong to your bank");
+}
+
+// Get salary information for the selected period with bank verification
 $salary_stmt = $conn->prepare("
     SELECT sp.*, es.* 
     FROM salary_payments sp
     JOIN employee_salary es ON sp.salary_id = es.salary_id
-    WHERE sp.employee_id = ? AND sp.month = ? AND sp.year = ?
+    JOIN employee e ON sp.employee_id = e.employee_id
+    WHERE sp.employee_id = ? AND sp.month = ? AND sp.year = ? AND e.bank_id = ?
 ");
-$salary_stmt->bind_param("iii", $employee_id, $month, $year);
+$salary_stmt->bind_param("iiii", $employee_id, $month, $year, $bank_id);
 $salary_stmt->execute();
 $salary = $salary_stmt->get_result()->fetch_assoc();
 $salary_stmt->close();
 
-// Get attendance for the selected period
+// Get attendance for the selected period with bank verification
 $attendance_stmt = $conn->prepare("
-    SELECT * FROM employee_attendance 
-    WHERE employee_id = ? AND MONTH(date) = ? AND YEAR(date) = ?
-    ORDER BY date
+    SELECT ea.* 
+    FROM employee_attendance ea
+    JOIN employee e ON ea.employee_id = e.employee_id
+    WHERE ea.employee_id = ? AND MONTH(ea.date) = ? AND YEAR(ea.date) = ? AND e.bank_id = ?
+    ORDER BY ea.date
 ");
-$attendance_stmt->bind_param("iii", $employee_id, $month, $year);
+$attendance_stmt->bind_param("iiii", $employee_id, $month, $year, $bank_id);
 $attendance_stmt->execute();
 $attendance = $attendance_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $attendance_stmt->close();

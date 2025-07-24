@@ -10,6 +10,8 @@ if (!isset($_SESSION['employee_id'])) {
     header("Location: bank_login.php");
     exit();
 }
+// Get logged-in employee's bank_id
+$loggedInBankId = $_SESSION['bank_id'];
 
 // CSRF token
 if (empty($_SESSION['csrf_token'])) {
@@ -34,18 +36,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $account_type = $_POST['account_type'];
                 $initial_deposit = $_POST['initial_deposit'];
                 
-                // Check if customer exists
-                $customer_check = $conn->prepare("SELECT customer_id FROM customers WHERE customer_id = ? AND status = 'active'");
+                // Check if customer exists and belongs to the logged-in bank
+                $customer_check = $conn->prepare("SELECT customer_id FROM customers WHERE customer_id = ? AND status = 'active' AND bank_id = ?");
                 if (!$customer_check) {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                $customer_check->bind_param("i", $customer_id);
+                $customer_check->bind_param("ii", $customer_id, $loggedInBankId);
                 $customer_check->execute();
                 $customer_result = $customer_check->get_result();
                 
                 if ($customer_result->num_rows == 0) {
-                    throw new Exception("Active customer not found");
+                    throw new Exception("Active customer not found or does not belong to your bank.");
                 }
                 
                 // Check if account type exists
@@ -95,68 +97,99 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
                 }
                 
-                $message = "Account opened successfully. Account #: $account_number";
+                $message = "Account opened successfully. Account #: " . htmlspecialchars($account_number);
                 
             } elseif ($action == 'close_account') {
                 $account_id = $_POST['account_id'];
                 $closing_notes = $_POST['closing_notes'];
                 
-                // Verify account exists and get balance
-                $balance_check = $conn->prepare("SELECT balance FROM accounts WHERE account_id = ?");
+                // Verify account exists, get balance, and ensure it belongs to the logged-in bank
+                $balance_check = $conn->prepare("
+                    SELECT a.balance
+                    FROM accounts a
+                    JOIN customers c ON a.user_id = c.customer_id
+                    WHERE a.account_id = ? AND c.bank_id = ?
+                ");
                 if (!$balance_check) {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                $balance_check->bind_param("i", $account_id);
+                $balance_check->bind_param("ii", $account_id, $loggedInBankId);
                 $balance_check->execute();
                 $balance_result = $balance_check->get_result();
                 
                 if ($balance_result->num_rows == 0) {
-                    throw new Exception("Account not found");
+                    throw new Exception("Account not found or does not belong to your bank.");
                 }
                 
                 $balance = $balance_result->fetch_assoc()['balance'];
                 
                 if ($balance != 0) {
-                    throw new Exception("Account must have zero balance before closing");
+                    throw new Exception("Account must have zero balance before closing.");
                 }
                 
-                // Mark account as inactive
-                $stmt = $conn->prepare("UPDATE accounts SET is_active = 0, updated_at = NOW() WHERE account_id = ?");
+                // Mark account as inactive, ensuring it belongs to the logged-in bank's customer
+                $stmt = $conn->prepare("
+                    UPDATE accounts a
+                    JOIN customers c ON a.user_id = c.customer_id
+                    SET a.is_active = 0, a.updated_at = NOW()
+                    WHERE a.account_id = ? AND c.bank_id = ?
+                ");
                 if (!$stmt) {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                $stmt->bind_param("i", $account_id);
+                $stmt->bind_param("ii", $account_id, $loggedInBankId);
                 
                 if (!$stmt->execute()) {
                     throw new Exception("Failed to close account: " . $stmt->error);
                 }
                 
-                $message = "Account closed successfully";
+                $message = "Account closed successfully.";
             }
             
             $conn->commit();
         } catch (Exception $e) {
             $conn->rollback();
             $error = "Error: " . $e->getMessage();
+            error_log("Account management error: " . $e->getMessage()); // Log error for debugging
         }
     }
 }
 
 // Fetch data for dropdowns and table
-$customers = $conn->query("SELECT customer_id, first_name, last_name FROM customers WHERE status = 'active' ORDER BY last_name");
+// Fetch customers for the logged-in bank
+$customers = null;
+$stmt_customers = $conn->prepare("SELECT customer_id, first_name, last_name FROM customers WHERE status = 'active' AND bank_id = ? ORDER BY last_name");
+if ($stmt_customers) {
+    $stmt_customers->bind_param("i", $loggedInBankId);
+    $stmt_customers->execute();
+    $customers = $stmt_customers->get_result();
+} else {
+    $error = "Failed to prepare customers query: " . $conn->error;
+}
+
+
 $account_types = $conn->query("SELECT type_id, type_name FROM account_types ORDER BY type_name");
 
-// Fetch active accounts
-$active_accounts = $conn->query("
+// Fetch active accounts for the logged-in bank
+$active_accounts = null;
+$stmt_active_accounts = $conn->prepare("
     SELECT a.account_id, a.account_number, a.balance, t.type_name, c.first_name, c.last_name
     FROM accounts a
     JOIN account_types t ON a.account_type_id = t.type_id
     JOIN customers c ON a.user_id = c.customer_id
-    WHERE a.is_active = 1
+    WHERE a.is_active = 1 AND c.bank_id = ?
     ORDER BY a.account_id DESC
 ");
+if ($stmt_active_accounts) {
+    $stmt_active_accounts->bind_param("i", $loggedInBankId);
+    $stmt_active_accounts->execute();
+    $active_accounts = $stmt_active_accounts->get_result();
+} else {
+    $error = "Failed to prepare active accounts query: " . $conn->error;
+}
+
 
 function generateAccountNumber($conn) {
     $prefix = date('Y');
@@ -181,16 +214,11 @@ function generateAccountNumber($conn) {
     return $account_number;
 }
 
-// Check for query errors
-if (!$customers) {
-    $error = "Failed to fetch customers: " . $conn->error;
-}
+// Check for query errors for account types (customers and active_accounts are handled by prepared statement checks)
 if (!$account_types) {
     $error = "Failed to fetch account types: " . $conn->error;
 }
-if (!$active_accounts) {
-    $error = "Failed to fetch active accounts: " . $conn->error;
-}
+
 
 include 'header.php';
 ?>
@@ -199,7 +227,6 @@ include 'header.php';
 <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-6">Account Management</h1>
     
-    <!-- Messages -->
     <?php if ($message): ?>
         <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
             <?= htmlspecialchars($message) ?>
@@ -212,7 +239,6 @@ include 'header.php';
         </div>
     <?php endif; ?>
     
-    <!-- Open Account Form -->
     <div class="bg-white p-6 rounded shadow mb-8">
    
         <h2 class="text-xl font-semibold mb-4">Open New Account</h2>
@@ -226,8 +252,8 @@ include 'header.php';
                     <select name="customer_id" required class="w-full px-3 py-2 border rounded">
                         <option value="">Select Customer</option>
                         <?php 
-                        if ($customers) {
-                            $customers->data_seek(0);
+                        if ($customers && $customers->num_rows > 0) {
+                            $customers->data_seek(0); // Reset pointer
                             while ($customer = $customers->fetch_assoc()): ?>
                                 <option value="<?= $customer['customer_id'] ?>">
                                     <?= htmlspecialchars($customer['last_name'] . ', ' . $customer['first_name']) ?>
@@ -241,8 +267,8 @@ include 'header.php';
                     <select name="account_type" required class="w-full px-3 py-2 border rounded">
                         <option value="">Select Account Type</option>
                         <?php 
-                        if ($account_types) {
-                            $account_types->data_seek(0);
+                        if ($account_types && $account_types->num_rows > 0) {
+                            $account_types->data_seek(0); // Reset pointer
                             while ($type = $account_types->fetch_assoc()): ?>
                                 <option value="<?= $type['type_id'] ?>">
                                     <?= htmlspecialchars($type['type_name']) ?>
@@ -265,7 +291,6 @@ include 'header.php';
         </form>
     </div>
     
-    <!-- Active Accounts List -->
     <div class="bg-white p-6 rounded shadow">
         <h2 class="text-xl font-semibold mb-4">Active Accounts</h2>
         
@@ -308,7 +333,6 @@ include 'header.php';
     </div>
 </div>
 
-<!-- Close Account Modal -->
 <div id="closeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4">
     <div class="bg-white rounded-lg p-6 w-full max-w-md">
         <h2 class="text-xl font-semibold mb-4">Close Account</h2>

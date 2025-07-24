@@ -13,37 +13,101 @@ if (!isset($_SESSION['employee_id'])) {
     exit();
 }
 
-// Get employee role for conditional display
+// Get logged-in employee's bank information
+$loggedInBankId = $_SESSION['bank_id'];
+$bank_name = $_SESSION['bank_name'] ?? 'Bank';
 $employee_role = $_SESSION['role'] ?? 'teller';
 
-// Get dashboard statistics with error handling
-$stats = [];
+// Function to safely fetch data with error handling
+function fetchBankData($conn, $query, $params = [], $param_types = '') {
+    try {
+        $stmt = $conn->prepare($query);
+        if ($params) {
+            $stmt->bind_param($param_types, ...$params);
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+        return $result->fetch_all(MYSQLI_ASSOC);
+    } catch (Exception $e) {
+        error_log("Database error: " . $e->getMessage());
+        return [];
+    }
+}
+
+// Get dashboard statistics for the specific bank
+$stats = [
+    'total_customers' => 0,
+    'active_accounts' => 0,
+    'today_transactions' => 0,
+    'total_balance' => 0
+];
+
 try {
-    $stats['total_customers'] = $conn->query("SELECT COUNT(*) FROM customers")->fetch_row()[0] ?? 0;
-    $stats['active_accounts'] = $conn->query("SELECT COUNT(*) FROM accounts WHERE is_active = 1")->fetch_row()[0] ?? 0;
-    $stats['today_transactions'] = $conn->query("SELECT COUNT(*) FROM transactions WHERE DATE(transaction_date) = CURDATE()")->fetch_row()[0] ?? 0;
-    $stats['total_balance'] = $conn->query("SELECT SUM(balance) FROM accounts WHERE is_active = 1")->fetch_row()[0] ?? 0;
+    // Total customers for this bank
+    $result = $conn->prepare("SELECT COUNT(*) FROM customers WHERE bank_id = ?");
+    $result->bind_param("i", $loggedInBankId);
+    $result->execute();
+    $stats['total_customers'] = $result->get_result()->fetch_row()[0] ?? 0;
+
+    // Active accounts for this bank's customers
+    $result = $conn->prepare("
+        SELECT COUNT(*) 
+        FROM accounts a
+        JOIN customers c ON a.user_id = c.customer_id
+        WHERE a.is_active = 1 AND c.bank_id = ?
+    ");
+    $result->bind_param("i", $loggedInBankId);
+    $result->execute();
+    $stats['active_accounts'] = $result->get_result()->fetch_row()[0] ?? 0;
+
+    // Today's transactions for this bank
+    $result = $conn->prepare("
+        SELECT COUNT(*) 
+        FROM transactions t
+        JOIN customers c ON t.user_id = c.customer_id
+        WHERE DATE(t.transaction_date) = CURDATE() AND c.bank_id = ?
+    ");
+    $result->bind_param("i", $loggedInBankId);
+    $result->execute();
+    $stats['today_transactions'] = $result->get_result()->fetch_row()[0] ?? 0;
+
+    // Total balance for this bank's accounts
+    $result = $conn->prepare("
+        SELECT SUM(a.balance) 
+        FROM accounts a
+        JOIN customers c ON a.user_id = c.customer_id
+        WHERE a.is_active = 1 AND c.bank_id = ?
+    ");
+    $result->bind_param("i", $loggedInBankId);
+    $result->execute();
+    $stats['total_balance'] = $result->get_result()->fetch_row()[0] ?? 0;
+
 } catch (Exception $e) {
     error_log("Dashboard stats error: " . $e->getMessage());
 }
 
-// Recent transactions with error handling
-$recent_transactions = [];
-try {
-    $result = $conn->query("
-        SELECT t.transaction_id, t.transaction_date, t.amount, t.transaction_type, 
-               a.account_number, c.first_name, c.last_name
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.account_id
-        JOIN customers c ON t.user_id = c.customer_id
-        ORDER BY t.transaction_date DESC
+// Recent transactions for this bank
+$recent_transactions = fetchBankData($conn, "
+    SELECT t.transaction_id, t.transaction_date, t.amount, t.transaction_type, 
+           a.account_number, c.first_name, c.last_name
+    FROM transactions t
+    JOIN accounts a ON t.account_id = a.account_id
+    JOIN customers c ON t.user_id = c.customer_id
+    WHERE c.bank_id = ?
+    ORDER BY t.transaction_date DESC
+    LIMIT 5
+", [$loggedInBankId], 'i');
+
+// Recent employees for this bank (only visible to managers/admins)
+$recent_employees = [];
+if ($employee_role === 'manager' || $employee_role === 'admin') {
+    $recent_employees = fetchBankData($conn, "
+        SELECT employee_id, employees_first_name, employees_last_name, role, created_at
+        FROM employee
+        WHERE bank_id = ?
+        ORDER BY created_at DESC
         LIMIT 5
-    ");
-    if ($result) {
-        $recent_transactions = $result->fetch_all(MYSQLI_ASSOC);
-    }
-} catch (Exception $e) {
-    error_log("Recent transactions error: " . $e->getMessage());
+    ", [$loggedInBankId], 'i');
 }
 
 include 'header.php';

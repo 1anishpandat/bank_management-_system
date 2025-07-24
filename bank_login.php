@@ -26,7 +26,7 @@ if (isset($_POST['login'])) {
         if (password_verify($login_password, $row['bank_password'])) {
             // Login successful
             session_start(); // Start session
-         // After successful login verification, set the role in session
+           // After successful login verification, set the role in session
 $_SESSION['employee_id'] = $login_employee_id;
 $_SESSION['bank_id'] = $row['bank_id'];
 $_SESSION['bank_name'] = $row['bank_name'];

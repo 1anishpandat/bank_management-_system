@@ -13,15 +13,16 @@ function sanitize_input($data) {
 }
 
 // Authentication check
-if (!isset($_SESSION['employee_id'])) {
+if (!isset($_SESSION['employee_id']) || !isset($_SESSION['bank_id'])) {
     header("Location: bank_login.php");
     exit();
 }
 
+$employee_id = $_SESSION['employee_id'];
+$bank_id = $_SESSION['bank_id'];
 $employee_role = $_SESSION['role'] ?? 'teller';
 $action = $_GET['action'] ?? 'list';
 
-$employee_id = $_SESSION['employee_id']; 
 $error_message = '';
 $success_message = '';
 $active_tab = sanitize_input($_GET['tab'] ?? 'withdrawal');
@@ -45,20 +46,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             try {
                 $conn->begin_transaction();
                 
-                // 1. Check if account exists and get current balance (with row locking)
-                $stmt = $conn->prepare("SELECT account_id, balance, user_id FROM accounts WHERE account_number = ? FOR UPDATE");
+                // 1. Check if account exists and belongs to the same bank (with row locking)
+                $stmt = $conn->prepare("
+                    SELECT a.account_id, a.balance, a.user_id 
+                    FROM accounts a
+                    JOIN customers c ON a.user_id = c.customer_id
+                    WHERE a.account_number = ? AND c.bank_id = ?
+                    FOR UPDATE
+                ");
                 if ($stmt === false) {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                if (!$stmt->bind_param("s", $account_number) || !$stmt->execute()) {
+                if (!$stmt->bind_param("si", $account_number, $bank_id) || !$stmt->execute()) {
                     throw new Exception("Failed to retrieve account: " . $stmt->error);
                 }
                 
                 $result = $stmt->get_result();
                 
                 if ($result->num_rows === 0) {
-                    throw new Exception("Account not found!");
+                    throw new Exception("Account not found or doesn't belong to your bank!");
                 }
                 
                 $account = $result->fetch_assoc();
@@ -103,7 +110,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 
                 // Record the transaction with all required fields
-                // CHANGED: Now using customer_id instead of user_id to match accounts table
                 $transaction_stmt = $conn->prepare("
                     INSERT INTO transactions 
                     (user_id, account_id, transaction_type, amount, description, 
@@ -115,7 +121,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                // CHANGED: Using customer_id instead of user_id in bind_param
                 if (!$transaction_stmt->bind_param(
                     "iisdsii", 
                     $user_id,
@@ -136,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $conn->rollback();
                 $error_message = "Error processing transaction: " . $e->getMessage();
                 error_log("[Transaction Error] " . date('Y-m-d H:i:s') . " - " . $e->getMessage() . 
-                         "\nAccount: $account_number\nAmount: $amount\nEmployee: $employee_id\n");
+                         "\nAccount: $account_number\nAmount: $amount\nEmployee: $employee_id\nBank: $bank_id\n");
             }
         }
     }
@@ -147,6 +152,8 @@ $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
 include 'header.php';
 ?>
+
+<!-- Rest of your HTML remains the same -->
 
 <!DOCTYPE html>
 <html lang="en">

@@ -20,6 +20,9 @@ if (!isset($_SESSION['employee_id'])) {
     exit();
 }
 
+// Get logged-in employee's bank_id
+$loggedInBankId = $_SESSION['bank_id'];
+
 $employee_role = $_SESSION['role'] ?? 'teller';
 $action = $_GET['action'] ?? 'list';
 
@@ -31,17 +34,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $email = sanitize_input($_POST['email']);
         $phone = sanitize_input($_POST['phone']);
         $address = sanitize_input($_POST['address']);
-        $id_proof_number = sanitize_input($_POST['id_proof_number']); // <--- Add this line
+        $id_proof_number = sanitize_input($_POST['id_proof_number']);
 
-        $stmt = $conn->prepare("INSERT INTO customers (first_name, last_name, email, phone, address, id_proof_number, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-        //                                                                                                ^ Add id_proof_number here
-
+        // Modified INSERT statement to include bank_id
+        // There are 7 placeholders (?) in the VALUES clause:
+        // first_name, last_name, email, phone, address, id_proof_number, bank_id
+        $stmt = $conn->prepare("INSERT INTO customers (first_name, last_name, email, phone, address, id_proof_number, bank_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+        
         if ($stmt === false) {
             $error_message = "SQL prepare error: " . $conn->error;
         } else {
-            $stmt->bind_param("ssssss", $first_name, $last_name, $email, $phone, $address, $id_proof_number);
-            //                                             ^ Add 's' for id_proof_number (string type)
-
+            // Corrected bind_param: The type definition string should match the 7 '?' placeholders.
+            // 'ssssssi' corresponds to:
+            // s: $first_name (string)
+            // s: $last_name (string)
+            // s: $email (string)
+            // s: $phone (string)
+            // s: $address (string)
+            // s: $id_proof_number (string)
+            // i: $loggedInBankId (integer)
+            $stmt->bind_param("ssssssi", $first_name, $last_name, $email, $phone, $address, $id_proof_number, $loggedInBankId);
+            
             if ($stmt->execute()) {
                 $success_message = "Customer added successfully!";
                 $action = 'list';
@@ -55,13 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 // Get customers list
 $customers = [];
 try {
-    $result = $conn->query("SELECT * FROM customers ORDER BY created_at DESC");
+    // Modified SELECT statement to filter by bank_id
+    $stmt_customers = $conn->prepare("SELECT * FROM customers WHERE bank_id = ? ORDER BY created_at DESC");
+    if ($stmt_customers === false) {
+        throw new Exception("SQL prepare error: " . $conn->error);
+    }
+    $stmt_customers->bind_param("i", $loggedInBankId); // 'i' for integer bank_id
+    $stmt_customers->execute();
+    $result = $stmt_customers->get_result();
+
     if ($result) {
         $customers = $result->fetch_all(MYSQLI_ASSOC);
     } else {
-        // If $result is false, it means the query itself failed
         $error_message = "Error executing customer fetch query: " . $conn->error;
     }
+    $stmt_customers->close();
 } catch (Exception $e) {
     $error_message = "Error fetching customers: " . $e->getMessage();
 }
