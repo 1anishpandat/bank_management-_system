@@ -373,7 +373,7 @@ if (isset($_SESSION['employee_id']) && $conn) {
     <div class="sidebar" id="sidebar">
         <ul class="sidebar-menu">
             <li class="<?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>">
-                <a href="dashboard.php">
+                <a href="dashboard">
                     <i class="fas fa-tachometer-alt"></i>
                     <span>Dashboard</span>
                 </a>
@@ -386,8 +386,8 @@ if (isset($_SESSION['employee_id']) && $conn) {
                     <i class="fas fa-chevron-down dropdown-icon"></i>
                 </a>
                 <ul class="submenu">
-                    <li><a href="customer_management.php">My Accounts</a></li>
-                    <li><a href="account_types.php">Account Types</a></li>
+                    <li><a href="customer_management">My Accounts</a></li>
+                    <li><a href="account_types">Account Types</a></li>
                 </ul>
             </li>
             
@@ -398,7 +398,7 @@ if (isset($_SESSION['employee_id']) && $conn) {
                     <i class="fas fa-chevron-down dropdown-icon"></i>
                 </a>
                 <ul class="submenu">
-                    <li><a href="transactions.php">Transaction History</a></li>
+                    <li><a href="transactions">Transaction History</a></li>
                     <li><a href="transfer.php">Transfer Funds</a></li>
                 </ul>
             </li>
@@ -419,8 +419,8 @@ if (isset($_SESSION['employee_id']) && $conn) {
                     <i class="fas fa-chevron-down dropdown-icon"></i>
                 </a>
                 <ul class="submenu">
-                    <li><a href="reports.php">Financial Reports</a></li>
-                    <li><a href="budgets.php">Budget Analysis</a></li>
+                    <li><a href="reports">Financial Reports</a></li>
+                    <li><a href="budgets">Budget Analysis</a></li>
                 </ul>
             </li>
             
