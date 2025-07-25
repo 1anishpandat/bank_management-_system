@@ -9,28 +9,19 @@ error_reporting(E_ALL);       // Report all errors
 require_once 'db_connect.php';
 
 // Start session and check authentication
-// Always ensure session_start() is at the very top before any output.
 session_start();
-
-// Security: Session fixation protection - regenerate session ID on login or critical actions
-// This could be placed in employee_login.php after successful login.
-// if (!isset($_SESSION['initiated'])) {
-//     session_regenerate_id(true);
-//     $_SESSION['initiated'] = true;
-// }
 
 // Authorization check: Redirect if not authenticated
 if (!isset($_SESSION['employee_id'])) {
     header("Location: employee_login.php");
-    exit(); // Always exit after a header redirect
+    exit();
 }
 
 // Get logged-in employee and bank details
-// These variables are often used for displaying the logged-in user's info or for permission checks.
-// It's good practice to fetch this once.
 $current_employee_id = $_SESSION['employee_id'];
 $employee = null;
 $bank = null;
+$current_bank_id = null;
 
 // Use prepared statements for fetching user details to prevent SQL injection
 if ($stmt = $conn->prepare("SELECT * FROM employee WHERE employee_id = ?")) {
@@ -39,11 +30,12 @@ if ($stmt = $conn->prepare("SELECT * FROM employee WHERE employee_id = ?")) {
     $result = $stmt->get_result();
     if ($result->num_rows > 0) {
         $employee = $result->fetch_assoc();
+        $current_bank_id = $employee['bank_id'];
     }
     $stmt->close();
 } else {
-    // Log error if prepare fails
     error_log("Failed to prepare employee details query: " . $conn->error);
+    die("Database error. Please try again later.");
 }
 
 // Fetch bank details if employee data was retrieved
@@ -63,9 +55,7 @@ if ($employee && isset($employee['bank_id'])) {
 }
 
 // Initialize systems
-// Ensure the EmployeeAttendance class is defined before it's instantiated.
-// It is already defined below, so this is fine.
-$attendance = new EmployeeAttendance($conn);
+$attendance = new EmployeeAttendance($conn, $current_bank_id);
 
 // Message variable to display feedback to the user
 $message = '';
@@ -78,17 +68,49 @@ $view_year = date('Y');   // Default to current year
 
 /**
  * Class EmployeeAttendance
- * Handles employee attendance and salary related database operations.
+ * Handles employee attendance and salary related database operations with bank-specific restrictions.
  */
 class EmployeeAttendance {
     private $conn;
+    private $current_bank_id;
 
     /**
      * Constructor
      * @param mysqli $conn The database connection object.
+     * @param int $current_bank_id The bank ID of the logged-in employee
      */
-    public function __construct(mysqli $conn) {
+    public function __construct(mysqli $conn, int $current_bank_id) {
         $this->conn = $conn;
+        $this->current_bank_id = $current_bank_id;
+    }
+
+    /**
+     * Verify if an employee belongs to the same bank as the logged-in user
+     * @param int $employee_id
+     * @return bool
+     */
+    private function verifyEmployeeBank(int $employee_id): bool {
+        try {
+            $query = "SELECT bank_id FROM employee WHERE employee_id = ?";
+            $stmt = $this->conn->prepare($query);
+            if (!$stmt) {
+                throw new Exception("Failed to prepare bank verification query: " . $this->conn->error);
+            }
+            $stmt->bind_param("i", $employee_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $stmt->close();
+            
+            if ($result->num_rows === 0) {
+                return false;
+            }
+            
+            $row = $result->fetch_assoc();
+            return ($row['bank_id'] == $this->current_bank_id);
+        } catch (Exception $e) {
+            error_log("Error verifying employee bank: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -99,76 +121,75 @@ class EmployeeAttendance {
      * @param string|null $check_out Time in HH:MM:SS format (or null).
      * @param string $status Attendance status (e.g., 'present', 'absent', 'half_day', 'leave', 'holiday').
      * @param string $notes Additional notes.
-     * @return bool True on success, false on failure.
+     * @return array Result with success status and message
      */
-    public function markAttendance(int $employee_id, string $date, ?string $check_in, ?string $check_out, string $status, string $notes = ''): bool {
-        // Input validation for status to prevent invalid data insertion
+    public function markAttendance(int $employee_id, string $date, ?string $check_in, ?string $check_out, string $status, string $notes = ''): array {
+        // First verify the employee belongs to the same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return ['success' => false, 'message' => "Unauthorized access to employee from another bank."];
+        }
+
+        // Input validation
         $allowed_statuses = ['present', 'absent', 'half_day', 'leave', 'holiday'];
         if (!in_array($status, $allowed_statuses)) {
-            error_log("Invalid attendance status provided: " . $status);
-            return false;
+            return ['success' => false, 'message' => "Invalid attendance status provided."];
         }
 
-        // Basic date validation
         if (!preg_match("/^\d{4}-\d{2}-\d{2}$/", $date) || !strtotime($date)) {
-            error_log("Invalid date format provided for attendance: " . $date);
-            return false;
-        }
-        // Basic time validation (allow null)
-        if ($check_in !== null && !preg_match("/^\d{2}:\d{2}(:\d{2})?$/", $check_in)) {
-             error_log("Invalid check_in time format provided: " . $check_in);
-             return false;
-        }
-        if ($check_out !== null && !preg_match("/^\d{2}:\d{2}(:\d{2})?$/", $check_out)) {
-            error_log("Invalid check_out time format provided: " . $check_out);
-            return false;
+            return ['success' => false, 'message' => "Invalid date format provided."];
         }
 
+        if ($check_in !== null && !preg_match("/^\d{2}:\d{2}(:\d{2})?$/", $check_in)) {
+            return ['success' => false, 'message' => "Invalid check-in time format."];
+        }
+
+        if ($check_out !== null && !preg_match("/^\d{2}:\d{2}(:\d{2})?$/", $check_out)) {
+            return ['success' => false, 'message' => "Invalid check-out time format."];
+        }
 
         try {
-            // Check if attendance already exists for this employee on this date
-            $query = "SELECT attendance_id FROM employee_attendance
-                      WHERE employee_id = ? AND date = ?";
+            // Check if attendance already exists
+            $query = "SELECT attendance_id FROM employee_attendance WHERE employee_id = ? AND date = ?";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
-                throw new Exception("Failed to prepare check attendance query: " . $this->conn->error);
+                throw new Exception("Failed to prepare check attendance query.");
             }
             $stmt->bind_param("is", $employee_id, $date);
             $stmt->execute();
             $result = $stmt->get_result();
+            $exists = ($result->num_rows > 0);
             $stmt->close();
 
-            if ($result->num_rows > 0) {
-                // Update existing record
-                $query = "UPDATE employee_attendance
-                          SET check_in = ?, check_out = ?, status = ?, notes = ?, updated_at = NOW()
+            if ($exists) {
+                $query = "UPDATE employee_attendance SET check_in = ?, check_out = ?, status = ?, notes = ?, updated_at = NOW() 
                           WHERE employee_id = ? AND date = ?";
                 $stmt = $this->conn->prepare($query);
                 if (!$stmt) {
-                    throw new Exception("Failed to prepare update attendance query: " . $this->conn->error);
+                    throw new Exception("Failed to prepare update attendance query.");
                 }
-                // 'ssssis' - s (check_in), s (check_out), s (status), s (notes), i (employee_id), s (date)
                 $stmt->bind_param("ssssis", $check_in, $check_out, $status, $notes, $employee_id, $date);
             } else {
-                // Insert new record
-                $query = "INSERT INTO employee_attendance
-                          (employee_id, date, check_in, check_out, status, notes, created_at, updated_at)
+                $query = "INSERT INTO employee_attendance (employee_id, date, check_in, check_out, status, notes, created_at, updated_at)
                           VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
                 $stmt = $this->conn->prepare($query);
                 if (!$stmt) {
-                    throw new Exception("Failed to prepare insert attendance query: " . $this->conn->error);
+                    throw new Exception("Failed to prepare insert attendance query.");
                 }
-                // 'isssss' - i (employee_id), s (date), s (check_in), s (check_out), s (status), s (notes)
                 $stmt->bind_param("isssss", $employee_id, $date, $check_in, $check_out, $status, $notes);
             }
 
             $success = $stmt->execute();
             $stmt->close();
-            return $success;
+            
+            return [
+                'success' => $success,
+                'message' => $success ? ($exists ? "Attendance updated successfully." : "Attendance marked successfully.") 
+                                      : "Failed to mark attendance."
+            ];
 
         } catch (Exception $e) {
             error_log("Attendance marking error: " . $e->getMessage());
-            return false;
+            return ['success' => false, 'message' => "An error occurred while marking attendance."];
         }
     }
 
@@ -177,32 +198,39 @@ class EmployeeAttendance {
      * @param int $employee_id
      * @param string $start_date Date in YYYY-MM-DD format.
      * @param string $end_date Date in YYYY-MM-DD format.
-     * @return array Array of attendance records.
+     * @return array Array of attendance records or error message
      */
     public function getAttendance(int $employee_id, string $start_date, string $end_date): array {
-        // Input validation for dates
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return ['error' => "Unauthorized access to employee data."];
+        }
+
+        // Input validation
         if (!preg_match("/^\d{4}-\d{2}-\d{2}$/", $start_date) || !strtotime($start_date) ||
             !preg_match("/^\d{4}-\d{2}-\d{2}$/", $end_date) || !strtotime($end_date)) {
-            error_log("Invalid date range format provided for attendance retrieval: $start_date to $end_date");
-            return [];
+            return ['error' => "Invalid date range format provided."];
         }
 
         try {
-            $query = "SELECT * FROM employee_attendance
+            $query = "SELECT * FROM employee_attendance 
                       WHERE employee_id = ? AND date BETWEEN ? AND ?
                       ORDER BY date DESC";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
-                throw new Exception("Failed to prepare get attendance query: " . $this->conn->error);
+                throw new Exception("Failed to prepare get attendance query.");
             }
             $stmt->bind_param("iss", $employee_id, $start_date, $end_date);
             $stmt->execute();
             $result = $stmt->get_result();
+            $records = $result->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
-            return $result->fetch_all(MYSQLI_ASSOC);
+            
+            return $records;
+
         } catch (Exception $e) {
             error_log("Attendance retrieval error: " . $e->getMessage());
-            return [];
+            return ['error' => "Failed to retrieve attendance records."];
         }
     }
 
@@ -211,19 +239,22 @@ class EmployeeAttendance {
      * @param int $employee_id
      * @param int $month Month number (1-12).
      * @param int $year Four-digit year.
-     * @return array Associative array with attendance counts.
+     * @return array Associative array with attendance counts or error message
      */
     public function getAttendanceSummary(int $employee_id, int $month, int $year): array {
-        // Input validation for month and year
-        if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) { // Reasonable range
-            error_log("Invalid month or year provided for attendance summary: Month=$month, Year=$year");
-            return $this->getDefaultAttendanceSummary();
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return ['error' => "Unauthorized access to employee data."];
+        }
+
+        // Input validation
+        if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
+            return ['error' => "Invalid month or year provided."];
         }
 
         try {
-            // Ensure proper date formatting for SQL query
             $first_day = sprintf("%04d-%02d-01", $year, $month);
-            $last_day = date("Y-m-t", strtotime($first_day)); // Gets the last day of the month
+            $last_day = date("Y-m-t", strtotime($first_day));
 
             $query = "SELECT
                         SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_days,
@@ -236,14 +267,13 @@ class EmployeeAttendance {
                       WHERE employee_id = ? AND date BETWEEN ? AND ?";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
-                throw new Exception("Failed to prepare attendance summary query: " . $this->conn->error);
+                throw new Exception("Failed to prepare attendance summary query.");
             }
             $stmt->bind_param("iss", $employee_id, $first_day, $last_day);
             $stmt->execute();
             $result = $stmt->get_result()->fetch_assoc();
             $stmt->close();
 
-            // Ensure all keys are present and cast to int, even if SUM returns NULL for some categories
             return [
                 'present_days' => (int)($result['present_days'] ?? 0),
                 'absent_days' => (int)($result['absent_days'] ?? 0),
@@ -252,44 +282,38 @@ class EmployeeAttendance {
                 'holiday_days' => (int)($result['holiday_days'] ?? 0),
                 'total_entries' => (int)($result['total_entries'] ?? 0)
             ];
+
         } catch (Exception $e) {
             error_log("Attendance summary error: " . $e->getMessage());
-            return $this->getDefaultAttendanceSummary();
+            return ['error' => "Failed to generate attendance summary."];
         }
     }
 
     /**
-     * Helper function for default attendance summary
-     */
-    private function getDefaultAttendanceSummary(): array {
-        return [
-            'present_days' => 0,
-            'absent_days' => 0,
-            'half_days' => 0,
-            'leave_days' => 0,
-            'holiday_days' => 0,
-            'total_entries' => 0
-        ];
-    }
-
-    /**
      * Retrieves the current salary details for a specific employee.
-     * Assumes 'is_current = 1' marks the active salary structure.
      * @param int $employee_id
-     * @return array|null Associative array of salary details, or null if not found.
+     * @return array|null Associative array of salary details, or null if not found
      */
     public function getEmployeeSalaryDetails(int $employee_id): ?array {
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return null;
+        }
+
         try {
             $query = "SELECT * FROM employee_salary WHERE employee_id = ? AND is_current = 1 ORDER BY effective_from DESC LIMIT 1";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
-                throw new Exception("Failed to prepare salary details query: " . $this->conn->error);
+                throw new Exception("Failed to prepare salary details query.");
             }
             $stmt->bind_param("i", $employee_id);
             $stmt->execute();
             $result = $stmt->get_result();
+            $details = $result->fetch_assoc();
             $stmt->close();
-            return $result->fetch_assoc();
+            
+            return $details;
+
         } catch (Exception $e) {
             error_log("Error fetching salary details: " . $e->getMessage());
             return null;
@@ -297,8 +321,7 @@ class EmployeeAttendance {
     }
 
     /**
-     * Adds a new salary structure or updates an existing one for an employee,
-     * setting the new structure as current and deactivating previous ones.
+     * Adds or updates a salary structure for an employee.
      * @param int $employee_id
      * @param float $basic_salary
      * @param float $hra
@@ -306,145 +329,145 @@ class EmployeeAttendance {
      * @param float $allowances
      * @param float $deductions
      * @param float $tax
-     * @return array Status of the operation.
+     * @return array Result with success status and message
      */
     public function addOrUpdateSalaryStructure(int $employee_id, float $basic_salary, float $hra, float $da, float $allowances, float $deductions, float $tax): array {
-        // Input validation for financial values
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return ['success' => false, 'message' => "Unauthorized access to employee data."];
+        }
+
+        // Input validation
         if ($basic_salary < 0 || $hra < 0 || $da < 0 || $allowances < 0 || $deductions < 0 || $tax < 0) {
             return ['success' => false, 'message' => "Salary components cannot be negative."];
         }
 
-        $this->conn->begin_transaction(); // Start a transaction for atomicity
+        $this->conn->begin_transaction();
         try {
-            // First, set all existing salary structures for this employee to not current
+            // Deactivate previous salary structures
             $update_prev_query = "UPDATE employee_salary SET is_current = 0, updated_at = NOW() WHERE employee_id = ?";
             $stmt_prev = $this->conn->prepare($update_prev_query);
             if (!$stmt_prev) {
-                throw new Exception("Failed to prepare update previous salary query: " . $this->conn->error);
+                throw new Exception("Failed to prepare update previous salary query.");
             }
             $stmt_prev->bind_param("i", $employee_id);
             $stmt_prev->execute();
             $stmt_prev->close();
 
-            // Insert the new salary structure as current
-            // The net_salary is often calculated at the time of generation, not structure definition
+            // Insert new salary structure
             $insert_query = "INSERT INTO employee_salary
                              (employee_id, basic_salary, hra, da, allowances, deductions, tax, net_salary, effective_from, is_current, created_at, updated_at)
                              VALUES (?, ?, ?, ?, ?, ?, ?, 0.00, CURDATE(), 1, NOW(), NOW())";
             $stmt_insert = $this->conn->prepare($insert_query);
             if (!$stmt_insert) {
-                throw new Exception("Failed to prepare insert salary query: " . $this->conn->error);
+                throw new Exception("Failed to prepare insert salary query.");
             }
-            // 'idddddd' - i (employee_id), d (basic_salary), d (hra), d (da), d (allowances), d (deductions), d (tax)
             $stmt_insert->bind_param("idddddd", $employee_id, $basic_salary, $hra, $da, $allowances, $deductions, $tax);
             $success = $stmt_insert->execute();
             $stmt_insert->close();
 
             if ($success) {
-                $this->conn->commit(); // Commit transaction
+                $this->conn->commit();
                 return ['success' => true, 'message' => "Salary structure added/updated successfully."];
             } else {
-                $this->conn->rollback(); // Rollback on failure
+                $this->conn->rollback();
                 return ['success' => false, 'message' => "Failed to add/update salary structure."];
             }
 
         } catch (Exception $e) {
-            $this->conn->rollback(); // Rollback on exception
+            $this->conn->rollback();
             error_log("Salary structure error: " . $e->getMessage());
-            return ['success' => false, 'message' => "Error adding/updating salary structure: " . $e->getMessage()];
+            return ['success' => false, 'message' => "Error processing salary structure: " . $e->getMessage()];
         }
     }
 
     /**
-     * Generates and records salary for an employee for a given month and year
-     * based on their attendance and current salary structure.
+     * Generates and records salary for an employee for a given month and year.
      * @param int $employee_id
      * @param int $month Month number (1-12).
      * @param int $year Four-digit year.
-     * @return array Status and calculated net salary.
+     * @return array Result with success status, message, and calculated net salary
      */
     public function generateSalary(int $employee_id, int $month, int $year): array {
-        // Input validation for month and year
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return ['success' => false, 'message' => "Unauthorized access to employee data.", 'net_salary' => 0];
+        }
+
+        // Input validation
         if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
-            return ['success' => false, 'message' => "Invalid month or year for salary generation."];
+            return ['success' => false, 'message' => "Invalid month or year for salary generation.", 'net_salary' => 0];
         }
 
         try {
-            // 1. Get salary details for the employee
+            // 1. Get salary details
             $salary_details = $this->getEmployeeSalaryDetails($employee_id);
             if (!$salary_details) {
-                return ['success' => false, 'message' => "Salary details not found for employee ID: $employee_id"];
+                return ['success' => false, 'message' => "Salary details not found for employee.", 'net_salary' => 0];
             }
 
             $basic_salary = (float)($salary_details['basic_salary'] ?? 0);
             $hra = (float)($salary_details['hra'] ?? 0);
             $da = (float)($salary_details['da'] ?? 0);
             $allowances = (float)($salary_details['allowances'] ?? 0);
-            $deductions = (float)($salary_details['deductions'] ?? 0); // These are structure deductions
+            $deductions = (float)($salary_details['deductions'] ?? 0);
             $tax = (float)($salary_details['tax'] ?? 0);
             $salary_id = (int)($salary_details['salary_id'] ?? 0);
 
-            // 2. Get attendance summary for the month
+            // 2. Get attendance summary
             $attendance_summary = $this->getAttendanceSummary($employee_id, $month, $year);
+            if (isset($attendance_summary['error'])) {
+                return ['success' => false, 'message' => $attendance_summary['error'], 'net_salary' => 0];
+            }
 
             $present_days = (int)($attendance_summary['present_days'] ?? 0);
             $half_days = (int)($attendance_summary['half_days'] ?? 0);
             $leave_days = (int)($attendance_summary['leave_days'] ?? 0);
-            $holiday_days = (int)($attendance_summary['holiday_days'] ?? 0); // Assuming holidays are paid
+            $holiday_days = (int)($attendance_summary['holiday_days'] ?? 0);
 
-            // Calculate total payable days
-            // A half-day typically counts as 0.5, and leave/holidays might be paid depending on policy.
+            // Calculate payable days (adjust according to your business rules)
             $payable_days = $present_days + ($half_days * 0.5) + $leave_days + $holiday_days;
 
-            // Get total days in the month to calculate daily rate
+            // Calculate daily rates and gross salary
             $days_in_month = (int)cal_days_in_month(CAL_GREGORIAN, $month, $year);
             if ($days_in_month === 0) {
-                return ['success' => false, 'message' => "Invalid month/year for calculating days in month."];
+                return ['success' => false, 'message' => "Invalid month/year for calculation.", 'net_salary' => 0];
             }
 
-            // Calculate daily rate for each component
-            $daily_basic_salary = $basic_salary / $days_in_month;
+            $daily_basic = $basic_salary / $days_in_month;
             $daily_hra = $hra / $days_in_month;
             $daily_da = $da / $days_in_month;
             $daily_allowances = $allowances / $days_in_month;
 
-            // Calculate gross salary for payable days
-            $gross_salary = ($payable_days * $daily_basic_salary) +
-                            ($payable_days * $daily_hra) +
-                            ($payable_days * $daily_da) +
-                            ($payable_days * $daily_allowances);
+            $gross_salary = ($payable_days * $daily_basic) +
+                           ($payable_days * $daily_hra) +
+                           ($payable_days * $daily_da) +
+                           ($payable_days * $daily_allowances);
 
-            // Calculate net salary after deductions and tax
-            $calculated_net_salary = $gross_salary - $deductions - $tax;
-            // Ensure net salary is not negative
-            $calculated_net_salary = max(0.00, $calculated_net_salary);
-            $calculated_net_salary = round($calculated_net_salary, 2); // Round to 2 decimal places
+            // Calculate net salary
+            $calculated_net_salary = max(0.00, round($gross_salary - $deductions - $tax, 2));
+            $payment_date = date('Y-m-d');
 
-            // 3. Record salary payment
-            $payment_date = date('Y-m-d'); // Today's date as payment date
-
-            // Check if salary already paid for this month and year
+            // Check if salary already exists for this period
             $check_query = "SELECT payment_id FROM salary_payments WHERE employee_id = ? AND month = ? AND year = ?";
             $check_stmt = $this->conn->prepare($check_query);
             if (!$check_stmt) {
-                throw new Exception("Failed to prepare check salary payment query: " . $this->conn->error);
+                throw new Exception("Failed to prepare check salary payment query.");
             }
             $check_stmt->bind_param("iii", $employee_id, $month, $year);
             $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
+            $exists = ($check_stmt->get_result()->num_rows > 0);
             $check_stmt->close();
 
-            if ($check_result->num_rows > 0) {
-                // Update existing salary payment record
-                $update_query = "UPDATE salary_payments
-                                 SET days_present = ?, days_absent = ?, days_leave = ?, amount_paid = ?, payment_date = ?, status = 'paid', updated_at = NOW()
-                                 WHERE employee_id = ? AND month = ? AND year = ?";
-                $update_stmt = $this->conn->prepare($update_query);
-                if (!$update_stmt) {
-                    throw new Exception("Failed to prepare update salary payment query: " . $this->conn->error);
+            if ($exists) {
+                $query = "UPDATE salary_payments
+                         SET days_present = ?, days_absent = ?, days_leave = ?, amount_paid = ?, payment_date = ?, status = 'paid', updated_at = NOW()
+                         WHERE employee_id = ? AND month = ? AND year = ?";
+                $stmt = $this->conn->prepare($query);
+                if (!$stmt) {
+                    throw new Exception("Failed to prepare update salary payment query.");
                 }
-                // 'iiddsiii' - i(present), i(absent), i(leave), d(amount), s(date), i(emp_id), i(month), i(year)
-                $update_stmt->bind_param("iiddsiii",
+                $stmt->bind_param("iiidsiii", 
                     $present_days,
                     $attendance_summary['absent_days'],
                     $leave_days,
@@ -454,20 +477,15 @@ class EmployeeAttendance {
                     $month,
                     $year
                 );
-                $success = $update_stmt->execute();
-                $update_stmt->close();
-                $message = $success ? "Salary updated successfully." : "Failed to update salary.";
             } else {
-                // Insert new salary payment record
-                $insert_query = "INSERT INTO salary_payments
-                                 (employee_id, salary_id, month, year, days_present, days_absent, days_leave, amount_paid, payment_date, status, created_at, updated_at)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', NOW(), NOW())";
-                $insert_stmt = $this->conn->prepare($insert_query);
-                if (!$insert_stmt) {
-                    throw new Exception("Failed to prepare insert salary payment query: " . $this->conn->error);
+                $query = "INSERT INTO salary_payments
+                         (employee_id, salary_id, month, year, days_present, days_absent, days_leave, amount_paid, payment_date, status, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', NOW(), NOW())";
+                $stmt = $this->conn->prepare($query);
+                if (!$stmt) {
+                    throw new Exception("Failed to prepare insert salary payment query.");
                 }
-                // 'iiiiiiids' - i(emp_id), i(salary_id), i(month), i(year), i(present), i(absent), i(leave), d(amount), s(date)
-                $insert_stmt->bind_param("iiiiiiids",
+                $stmt->bind_param("iiiiiiids",
                     $employee_id,
                     $salary_id,
                     $month,
@@ -478,52 +496,95 @@ class EmployeeAttendance {
                     $calculated_net_salary,
                     $payment_date
                 );
-                $success = $insert_stmt->execute();
-                $insert_stmt->close();
-                $message = $success ? "Salary generated and recorded successfully." : "Failed to generate and record salary.";
             }
 
-            return ['success' => $success, 'message' => $message, 'net_salary' => $calculated_net_salary];
+            $success = $stmt->execute();
+            $stmt->close();
+            
+            return [
+                'success' => $success,
+                'message' => $success ? ($exists ? "Salary updated successfully." : "Salary generated and recorded successfully.") 
+                                      : "Failed to process salary.",
+                'net_salary' => $calculated_net_salary
+            ];
 
         } catch (Exception $e) {
             error_log("Salary generation error: " . $e->getMessage());
-            return ['success' => false, 'message' => "Error generating salary: " . $e->getMessage()];
+            return ['success' => false, 'message' => "Error generating salary: " . $e->getMessage(), 'net_salary' => 0];
         }
     }
 
     /**
-     * Retrieves basic employee details by ID.
+     * Retrieves basic employee details by ID (only for same bank employees).
      * @param int $employee_id
-     * @return array|null Associative array of employee details, or null if not found.
+     * @return array|null Associative array of employee details, or null if not found/unauthorized
      */
     public function getEmployeeDetails(int $employee_id): ?array {
+        // Verify employee belongs to same bank
+        if (!$this->verifyEmployeeBank($employee_id)) {
+            return null;
+        }
+
         try {
-            $query = "SELECT employee_id, employees_first_name, employees_last_name, employees_job_title, employees_department FROM employee WHERE employee_id = ?";
+            $query = "SELECT e.employee_id, e.employees_first_name, e.employees_last_name, 
+                             e.employees_job_title, e.employees_department, b.bank_name
+                      FROM employee e
+                      JOIN bank_details b ON e.bank_id = b.bank_id
+                      WHERE e.employee_id = ?";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
-                throw new Exception("Failed to prepare get employee details query: " . $this->conn->error);
+                throw new Exception("Failed to prepare get employee details query.");
             }
             $stmt->bind_param("i", $employee_id);
             $stmt->execute();
             $result = $stmt->get_result();
+            $details = $result->fetch_assoc();
             $stmt->close();
-            return $result->fetch_assoc();
+            
+            return $details;
+
         } catch (Exception $e) {
             error_log("Error fetching employee details: " . $e->getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Gets list of employees in the same bank (for dropdowns/selection)
+     * @return array List of employees or error message
+     */
+    public function getBankEmployees(): array {
+        try {
+            $query = "SELECT employee_id, employees_first_name, employees_last_name 
+                      FROM employee 
+                      WHERE bank_id = ? AND status = 'active'
+                      ORDER BY employees_last_name, employees_first_name";
+            $stmt = $this->conn->prepare($query);
+            if (!$stmt) {
+                throw new Exception("Failed to prepare get bank employees query.");
+            }
+            $stmt->bind_param("i", $this->current_bank_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $employees = $result->fetch_all(MYSQLI_ASSOC);
+            $stmt->close();
+            
+            return $employees;
+
+        } catch (Exception $e) {
+            error_log("Error fetching bank employees: " . $e->getMessage());
+            return ['error' => "Failed to retrieve employee list."];
         }
     }
 }
 
 // Handle POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitize and validate the action
     $action = filter_input(INPUT_POST, 'action', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 
     try {
         switch ($action) {
             case 'mark_attendance':
-                // Validate and sanitize inputs for marking attendance
                 $employee_id = filter_input(INPUT_POST, 'employee_id', FILTER_VALIDATE_INT);
                 $date = filter_input(INPUT_POST, 'date', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
                 $check_in = filter_input(INPUT_POST, 'check_in', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
@@ -531,25 +592,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $status = filter_input(INPUT_POST, 'status', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
                 $notes = filter_input(INPUT_POST, 'notes', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 
-                // Check if validation failed
-                if ($employee_id === false || $employee_id === null || !$date || !$status) {
-                    $message = "Invalid input for marking attendance.";
+                if (!$employee_id || !$date || !$status) {
+                    $message = "Required fields are missing.";
                     break;
                 }
 
                 $result = $attendance->markAttendance($employee_id, $date, $check_in, $check_out, $status, $notes);
-                $message = $result ? "Attendance marked successfully" : "Failed to mark attendance. Check logs for details.";
+                $message = $result['message'];
                 break;
 
             case 'generate_salary':
-                // Validate and sanitize inputs for generating salary
                 $employee_id = filter_input(INPUT_POST, 'salary_employee_id', FILTER_VALIDATE_INT);
                 $month = filter_input(INPUT_POST, 'salary_month', FILTER_VALIDATE_INT);
                 $year = filter_input(INPUT_POST, 'salary_year', FILTER_VALIDATE_INT);
 
-                // Check if validation failed
-                if ($employee_id === false || $employee_id === null || $month === false || $month === null || $year === false || $year === null) {
-                    $message = "Invalid input for generating salary.";
+                if (!$employee_id || !$month || !$year) {
+                    $message = "Required fields are missing.";
                     break;
                 }
 
@@ -561,7 +619,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'add_salary_structure':
-                // Validate and sanitize inputs for adding salary structure
                 $employee_id = filter_input(INPUT_POST, 'structure_employee_id', FILTER_VALIDATE_INT);
                 $basic_salary = filter_input(INPUT_POST, 'basic_salary', FILTER_VALIDATE_FLOAT);
                 $hra = filter_input(INPUT_POST, 'hra', FILTER_VALIDATE_FLOAT);
@@ -570,15 +627,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $deductions = filter_input(INPUT_POST, 'deductions', FILTER_VALIDATE_FLOAT);
                 $tax = filter_input(INPUT_POST, 'tax', FILTER_VALIDATE_FLOAT);
 
-                // Check if validation failed for any float or int
-                if ($employee_id === false || $employee_id === null ||
-                    $basic_salary === false || $basic_salary === null ||
-                    $hra === false || $hra === null ||
-                    $da === false || $da === null ||
-                    $allowances === false || $allowances === null ||
-                    $deductions === false || $deductions === null ||
-                    $tax === false || $tax === null) {
-                    $message = "Invalid input for adding salary structure. Ensure all numeric fields are valid numbers.";
+                if (!$employee_id || $basic_salary === false || $hra === false || $da === false || 
+                    $allowances === false || $deductions === false || $tax === false) {
+                    $message = "Invalid input data. Please check all fields.";
                     break;
                 }
 
@@ -587,16 +638,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
             case 'view_employee_data':
-                // Validate and sanitize inputs for viewing employee data
                 $employee_id_to_view = filter_input(INPUT_POST, 'view_employee_id', FILTER_VALIDATE_INT);
-                $view_month = filter_input(INPUT_POST, 'view_month', FILTER_VALIDATE_INT);
-                $view_year = filter_input(INPUT_POST, 'view_year', FILTER_VALIDATE_INT);
+                $view_month = filter_input(INPUT_POST, 'view_month', FILTER_VALIDATE_INT, ['options' => ['default' => date('n')]]);
+                $view_year = filter_input(INPUT_POST, 'view_year', FILTER_VALIDATE_INT, ['options' => ['default' => date('Y')]]);
 
-                // Check if validation failed
-                if ($employee_id_to_view === false || $employee_id_to_view === null ||
-                    $view_month === false || $view_month === null ||
-                    $view_year === false || $view_year === null) {
-                    $message = "Invalid input for viewing employee data.";
+                if (!$employee_id_to_view) {
+                    $message = "Employee ID is required.";
                     break;
                 }
 
@@ -605,69 +652,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $salary_details_for_display = $attendance->getEmployeeSalaryDetails($employee_id_to_view);
                     $attendance_summary_for_display = $attendance->getAttendanceSummary($employee_id_to_view, $view_month, $view_year);
 
-                    // Fetch detailed attendance records for the selected month/year
-                    $first_day_of_month = sprintf("%04d-%02d-01", $view_year, $view_month);
-                    $last_day_of_month = date("Y-m-t", strtotime($first_day_of_month));
-                    $employee_attendance_records = $attendance->getAttendance($employee_id_to_view, $first_day_of_month, $last_day_of_month);
+                    // Fetch detailed attendance records
+                    $first_day = sprintf("%04d-%02d-01", $view_year, $view_month);
+                    $last_day = date("Y-m-t", strtotime($first_day));
+                    $attendance_records = $attendance->getAttendance($employee_id_to_view, $first_day, $last_day);
+                    
+                    if (!isset($attendance_records['error'])) {
+                        $employee_attendance_records = $attendance_records;
+                    }
 
-                    $message = "Displaying data for Employee ID: " . $employee_id_to_view;
+                    $message = "Displaying data for " . htmlspecialchars($employee_details_result['employees_first_name'] . ' ' . $employee_details_result['employees_last_name']);
                 } else {
-                    $message = "Employee ID: " . $employee_id_to_view . " not found.";
+                    $message = "Employee not found or unauthorized access.";
                 }
                 break;
 
             case 'download_attendance_report':
-                // Validate and sanitize inputs for attendance report download
                 $employee_id = filter_input(INPUT_POST, 'report_employee_id', FILTER_VALIDATE_INT);
                 $start_date = filter_input(INPUT_POST, 'report_start_date', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
                 $end_date = filter_input(INPUT_POST, 'report_end_date', FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 
-                // Check if validation failed
-                if ($employee_id === false || $employee_id === null || !$start_date || !$end_date) {
-                    die("Invalid input for downloading attendance report."); // Die for direct file downloads
+                if (!$employee_id || !$start_date || !$end_date) {
+                    die("Invalid input for report generation.");
+                }
+
+                // Verify employee belongs to same bank
+                if (!$attendance->verifyEmployeeBank($employee_id)) {
+                    die("Unauthorized access to employee data.");
                 }
 
                 $records = $attendance->getAttendance($employee_id, $start_date, $end_date);
+                if (isset($records['error'])) {
+                    die($records['error']);
+                }
+
                 $employee_info = $attendance->getEmployeeDetails($employee_id);
                 $employee_name = $employee_info ? htmlspecialchars($employee_info['employees_first_name'] . ' ' . $employee_info['employees_last_name']) : 'Unknown';
 
-                // Set headers for CSV download
                 header('Content-Type: text/csv');
-                header('Content-Disposition: attachment; filename="attendance_report_employee_' . $employee_id . '_' . $start_date . '_to_' . $end_date . '.csv"');
+                header('Content-Disposition: attachment; filename="attendance_report_' . $employee_id . '_' . $start_date . '_to_' . $end_date . '.csv"');
                 header('Pragma: no-cache');
                 header('Expires: 0');
 
-                $output = fopen('php://output', 'w'); // Open output stream
-
-                // Add CSV header row with employee name
-                fputcsv($output, ['Attendance Report for: ' . $employee_name . ' (ID: ' . $employee_id . ')']);
+                $output = fopen('php://output', 'w');
+                fputcsv($output, ['Attendance Report for: ' . $employee_name]);
+                fputcsv($output, ['Bank: ' . ($employee_info['bank_name'] ?? 'N/A')]);
                 fputcsv($output, ['Date Range: ' . $start_date . ' to ' . $end_date]);
-                fputcsv($output, []); // Empty row for spacing
-                fputcsv($output, ['Attendance ID', 'Employee ID', 'Date', 'Check In', 'Check Out', 'Status', 'Notes', 'Created At', 'Updated At']);
+                fputcsv($output, []);
+                fputcsv($output, ['Date', 'Check In', 'Check Out', 'Status', 'Notes']);
 
-                // Add data rows
                 foreach ($records as $row) {
-                    fputcsv($output, $row);
+                    fputcsv($output, [
+                        $row['date'],
+                        $row['check_in'] ?? 'N/A',
+                        $row['check_out'] ?? 'N/A',
+                        $row['status'],
+                        $row['notes'] ?? ''
+                    ]);
                 }
 
                 fclose($output);
-                exit(); // Important to exit after sending the file
+                exit();
 
             case 'download_salary_report':
-                // Validate and sanitize inputs for salary report download
                 $employee_id = filter_input(INPUT_POST, 'salary_report_employee_id', FILTER_VALIDATE_INT);
                 $month = filter_input(INPUT_POST, 'salary_report_month', FILTER_VALIDATE_INT);
                 $year = filter_input(INPUT_POST, 'salary_report_year', FILTER_VALIDATE_INT);
 
-                // Check if validation failed
-                if ($employee_id === false || $employee_id === null ||
-                    $month === false || $month === null ||
-                    $year === false || $year === null) {
-                    die("Invalid input for downloading salary report."); // Die for direct file downloads
+                if (!$employee_id || !$month || !$year) {
+                    die("Invalid input for report generation.");
+                }
+
+                // Verify employee belongs to same bank
+                if (!$attendance->verifyEmployeeBank($employee_id)) {
+                    die("Unauthorized access to employee data.");
                 }
 
                 try {
-                    $query = "SELECT sp.*, e.employees_first_name, e.employees_last_name, es.basic_salary, es.hra, es.da, es.allowances, es.deductions AS structure_deductions, es.tax AS structure_tax, es.effective_from
+                    $query = "SELECT sp.*, e.employees_first_name, e.employees_last_name, 
+                                     es.basic_salary, es.hra, es.da, es.allowances, 
+                                     es.deductions AS structure_deductions, es.tax AS structure_tax
                               FROM salary_payments sp
                               JOIN employee e ON sp.employee_id = e.employee_id
                               JOIN employee_salary es ON sp.salary_id = es.salary_id
@@ -675,98 +739,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                               ORDER BY sp.payment_date DESC";
                     $stmt = $conn->prepare($query);
                     if (!$stmt) {
-                        throw new Exception("Failed to prepare salary report query: " . $conn->error);
+                        throw new Exception("Failed to prepare salary report query.");
                     }
                     $stmt->bind_param("iii", $employee_id, $month, $year);
                     $stmt->execute();
                     $records = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     $stmt->close();
                 } catch (Exception $e) {
-                    error_log("Error fetching salary report data: " . $e->getMessage());
-                    die("Error fetching salary report data.");
+                    die("Error generating salary report.");
                 }
 
-                // Set headers for CSV download
+                $employee_info = $attendance->getEmployeeDetails($employee_id);
+                $employee_name = $employee_info ? htmlspecialchars($employee_info['employees_first_name'] . ' ' . $employee_info['employees_last_name']) : 'Unknown';
+                $month_name = date('F', mktime(0, 0, 0, $month, 10));
+
                 header('Content-Type: text/csv');
-                header('Content-Disposition: attachment; filename="salary_report_employee_' . $employee_id . '_' . $month . '_' . $year . '.csv"');
+                header('Content-Disposition: attachment; filename="salary_report_' . $employee_id . '_' . $month_name . '_' . $year . '.csv"');
                 header('Pragma: no-cache');
                 header('Expires: 0');
 
-                $output = fopen('php://output', 'w'); // Open output stream
+                $output = fopen('php://output', 'w');
+                fputcsv($output, ['Salary Report for: ' . $employee_name]);
+                fputcsv($output, ['Bank: ' . ($employee_info['bank_name'] ?? 'N/A')]);
+                fputcsv($output, ['Period: ' . $month_name . ' ' . $year]);
+                fputcsv($output, []);
+                fputcsv($output, ['Payment Date', 'Basic Salary', 'HRA', 'DA', 'Allowances', 'Deductions', 'Tax', 'Net Salary', 'Days Present', 'Days Absent', 'Days Leave']);
 
-                // Add CSV header row with employee name and period
-                $employee_info = $attendance->getEmployeeDetails($employee_id); // Re-fetch to ensure data integrity
-                $employee_name = $employee_info ? htmlspecialchars($employee_info['employees_first_name'] . ' ' . $employee_info['employees_last_name']) : 'Unknown';
-                fputcsv($output, ['Salary Report for: ' . $employee_name . ' (ID: ' . $employee_id . ')']);
-                fputcsv($output, ['Month/Year: ' . date('F', mktime(0, 0, 0, $month, 10)) . ' ' . $year]);
-                fputcsv($output, []); // Empty row for spacing
-
-                // Add detailed CSV header row
-                fputcsv($output, [
-                    'Payment ID', 'Employee ID', 'Employee Name', 'Salary Structure ID', 'Effective From',
-                    'Basic Salary (Structure)', 'HRA (Structure)', 'DA (Structure)',
-                    'Allowances (Structure)', 'Deductions (Structure)', 'Tax (Structure)',
-                    'Month Paid', 'Year Paid', 'Days Present', 'Days Absent', 'Days Leave',
-                    'Calculated Net Amount Paid', 'Payment Date', 'Status', 'Created At', 'Updated At'
-                ]);
-
-                // Add data rows
                 foreach ($records as $row) {
-                    // Prepare data for CSV, including employee name and detailed salary structure
-                    $rowData = [
-                        $row['payment_id'],
-                        $row['employee_id'],
-                        $row['employees_first_name'] . ' ' . $row['employees_last_name'], // Concatenate name
-                        $row['salary_id'],
-                        $row['effective_from'],
-                        $row['basic_salary'],
-                        $row['hra'],
-                        $row['da'],
-                        $row['allowances'],
-                        $row['structure_deductions'],
-                        $row['structure_tax'],
-                        $row['month'],
-                        $row['year'],
+                    fputcsv($output, [
+                        $row['payment_date'],
+                        number_format($row['basic_salary'], 2),
+                        number_format($row['hra'], 2),
+                        number_format($row['da'], 2),
+                        number_format($row['allowances'], 2),
+                        number_format($row['structure_deductions'], 2),
+                        number_format($row['structure_tax'], 2),
+                        number_format($row['amount_paid'], 2),
                         $row['days_present'],
                         $row['days_absent'],
-                        $row['days_leave'],
-                        $row['amount_paid'],
-                        $row['payment_date'],
-                        $row['status'],
-                        $row['created_at'],
-                        $row['updated_at']
-                    ];
-                    fputcsv($output, $rowData);
+                        $row['days_leave']
+                    ]);
                 }
 
                 fclose($output);
-                exit(); // Important to exit after sending the file
+                exit();
 
             default:
                 $message = "Invalid action specified.";
                 break;
         }
     } catch (Exception $e) {
-        // Catch any uncaught exceptions during POST handling
-        $message = "An unexpected error occurred: " . $e->getMessage();
-        error_log("Unhandled exception in POST handler: " . $e->getMessage());
+        $message = "An error occurred: " . $e->getMessage();
+        error_log("Error in POST handler: " . $e->getMessage());
     }
 }
 
-// Ensure the database connection is closed when the script finishes.
-// This is typically handled automatically at script end, but explicit closure can be added if needed,
-// e.g., register_shutdown_function([$conn, 'close']); or just $conn->close(); at the end of the file.
-// For a script that includes header/sidebar/footer, closing it here might be too early.
-// $conn->close();
+// Get list of employees in the same bank for dropdowns
+$bank_employees = $attendance->getBankEmployees();
 
-// Include common header and sidebar for HTML output (assuming these files exist)
+// Include HTML header and sidebar
 include 'header.php';
 include 'sidebar.php';
 
-// The rest of the HTML structure for displaying forms and results would go here.
-// The variables like $message, $employee_details_result, $salary_details_for_display,
-// $attendance_summary_for_display, $employee_attendance_records, $view_month, $view_year
-// are now populated and ready to be used in the HTML part.
 ?>
 <!DOCTYPE html>
 <html lang="en">
