@@ -277,7 +277,7 @@ if (isset($_SESSION['employee_id']) && $conn) {
             function toggleFullscreen() {
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen().catch(e => {
-                        console.log("Fullscreen request denied or failed: " + e);
+                        console.log("Fullscreen request denied or failed: " . $e);
                     });
                 } else {
                     if (document.exitFullscreen) {
@@ -370,138 +370,7 @@ if (isset($_SESSION['employee_id']) && $conn) {
     </header>
 
     <?php if ($is_logged_in): ?>
-    <div class="sidebar" id="sidebar">
-        <ul class="sidebar-menu">
-            <li class="<?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>">
-                <a href="dashboard">
-                    <i class="fas fa-tachometer-alt"></i>
-                    <span>Dashboard</span>
-                </a>
-            </li>
-            
-            <li class="menu-dropdown <?php echo (in_array($current_page, ['accounts.php', 'account_types.php'])) ? 'active' : ''; ?>">
-                <a href="#">
-                    <i class="fas fa-wallet"></i>
-                    <span>Accounts</span>
-                    <i class="fas fa-chevron-down dropdown-icon"></i>
-                </a>
-                <ul class="submenu">
-                    <li><a href="customer_management">My Accounts</a></li>
-                    <li><a href="account_types">Account Types</a></li>
-                </ul>
-            </li>
-            
-            <li class="menu-dropdown <?php echo (in_array($current_page, ['transactions.php', 'transfer.php'])) ? 'active' : ''; ?>">
-                <a href="#">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>Transactions</span>
-                    <i class="fas fa-chevron-down dropdown-icon"></i>
-                </a>
-                <ul class="submenu">
-                    <li><a href="transactions">Transaction History</a></li>
-                    <li><a href="transfer.php">Transfer Funds</a></li>
-                </ul>
-            </li>
-            
-            <?php if (isset($_SESSION['employee_id'])): // This condition is technically redundant as it's already wrapped by $is_logged_in ?>
-            <li class="<?php echo ($current_page == 'customers.php') ? 'active' : ''; ?>">
-                <a href="customer_management.php">
-                    <i class="fas fa-users"></i>
-                    <span>Customer Management</span>
-                </a>
-            </li>
-            <?php endif; ?>
-            
-            <li class="menu-dropdown <?php echo (in_array($current_page, ['reports.php', 'budgets.php'])) ? 'active' : ''; ?>">
-                <a href="#">
-                    <i class="fas fa-chart-pie"></i>
-                    <span>Reports</span>
-                    <i class="fas fa-chevron-down dropdown-icon"></i>
-                </a>
-                <ul class="submenu">
-                    <li><a href="reports">Financial Reports</a></li>
-                    <li><a href="budgets">Budget Analysis</a></li>
-                </ul>
-            </li>
-            
-            <li class="<?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>">
-                <a href="settings.php">
-                    <i class="fas fa-cog"></i>
-                    <span>Settings</span>
-                </a>
-            </li>
-        </ul>
-    </div>
+    <?php include 'sidebar.php'; ?>
     <?php endif; ?>
 
     <div class="main-content" id="mainContent">
-        <?php if ($is_logged_in): ?>
-    <script>
-        // Sidebar toggle functionality - Only included when logged in
-        document.addEventListener('DOMContentLoaded', function() {
-            const sidebar = document.getElementById('sidebar');
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const mainContent = document.getElementById('mainContent');
-            
-            // Initialize sidebar state based on screen size
-            if (window.innerWidth > 768) {
-                sidebar.classList.add('active');
-            }
-            
-            // Toggle sidebar
-            sidebarToggle.addEventListener('click', function() {
-                sidebar.classList.toggle('active');
-            });
-            
-            // Close sidebar when clicking outside
-            document.addEventListener('click', function(event) {
-                if (!sidebar.contains(event.target) && 
-                    !sidebarToggle.contains(event.target) && 
-                    sidebar.classList.contains('active')) {
-                    sidebar.classList.remove('active');
-                }
-            });
-            
-            // Toggle dropdown menus
-            document.querySelectorAll('.menu-dropdown > a').forEach(item => {
-                item.addEventListener('click', function(e) {
-                    if (window.innerWidth > 768) {
-                        e.preventDefault();
-                        const parent = this.parentElement;
-                        parent.classList.toggle('active');
-                        
-                        // Close other open dropdowns
-                        document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
-                            if (dropdown !== parent) {
-                                dropdown.classList.remove('active');
-                            }
-                        });
-                    }
-                });
-            });
-            
-            // Auto-close dropdowns on mobile when navigating
-            if (window.innerWidth <= 768) {
-                document.querySelectorAll('.sidebar-menu a').forEach(link => {
-                    link.addEventListener('click', function() {
-                        document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
-                            dropdown.classList.remove('active');
-                        });
-                        sidebar.classList.remove('active');
-                    });
-                });
-            }
-            
-            // Make sidebar responsive
-            window.addEventListener('resize', function() {
-                if (window.innerWidth > 768) {
-                    sidebar.classList.add('active');
-                } else {
-                    sidebar.classList.remove('active');
-                }
-            });
-        });
-    </script>
-    <?php endif; ?>
-</body>
-</html> 

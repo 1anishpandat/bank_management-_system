@@ -1222,7 +1222,7 @@ include 'sidebar.php';
     </style>
 </head>
 <body>
-
+<?php include 'sidebar.php'; ?>
     
     <div class="container">
         <h1>Employee Attendance and Salary System</h1>

@@ -111,6 +111,7 @@ if ($employee_role === 'manager' || $employee_role === 'admin') {
 }
 
 include 'header.php';
+
 ?>
 
 <!DOCTYPE html>
