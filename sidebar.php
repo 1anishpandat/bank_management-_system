@@ -3,12 +3,72 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Check if user is logged in (this should be handled by the main page including this file)
+// Check if user is logged in
 $is_logged_in = isset($_SESSION['user_id']) || isset($_SESSION['employee_id']);
 $current_page = basename($_SERVER['PHP_SELF']);
 
-// Only show sidebar if logged in
-if ($is_logged_in): 
+// Get user role from session (don't default to 'customer' for employees)
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : null;
+
+// Define strict role permissions - FIXED PERMISSION KEYS
+$role_permissions = [
+    'teller' => [
+        'dashboard' => true,
+        'transactions' => true,
+        'transaction_processing' => true
+    ],
+    'accounts' => [
+        'dashboard' => true,
+        'my_accounts' => true,
+        'account_management' => true,
+        'transactions' => true,
+        'transaction_processing' => true,
+        'reports' => true
+    ],
+    'credit_card' => [
+        'dashboard' => true,
+        'credit_card_management' => true  // ✅ Fixed: matches the permission check
+    ],
+    'loan' => [
+        'dashboard' => true,
+        'loan_management' => true  // ✅ Fixed: matches the permission check
+    ],
+    'manager' => [
+        'all' => true
+    ]
+];
+
+// // Add this right after getting the user_role
+// echo "<div style='background:#fff;color:#000;padding:10px;position:fixed;top:0;right:0;z-index:9999;font-size:12px;'>
+//       Employee ID: " . ($_SESSION['employee_id'] ?? 'Not set') . "<br>
+//       Current Role: '" . htmlspecialchars($user_role ?? 'NULL') . "'<br>
+//       Role from session: '" . ($_SESSION['role'] ?? 'Not set') . "'<br>
+//       Is logged in: " . ($is_logged_in ? 'Yes' : 'No') . "<br>
+//       Permissions: " . print_r($role_permissions[$user_role] ?? ['No permissions'], true) . "
+//       </div>";
+
+// Function to check permissions
+function has_permission($role, $permission) {
+    global $role_permissions;
+    
+    // Manager has all permissions
+    if ($role === 'manager') return true;
+    
+    // Check if role exists and has the permission
+    if (isset($role_permissions[$role])) {
+        // Check for wildcard 'all' permission
+        if (isset($role_permissions[$role]['all']) && $role_permissions[$role]['all']) {
+            return true;
+        }
+        // Check specific permission
+        return isset($role_permissions[$role][$permission]) && $role_permissions[$role][$permission];
+    }
+    
+    return false;
+}
+
+// Only show sidebar if logged in and has a valid role
+if ($is_logged_in && $user_role): 
 ?>
 <style>
 /* Enhanced sidebar and main content adjustment styles */
@@ -147,6 +207,7 @@ if ($is_logged_in):
 
 <div class="sidebar" id="sidebar">
     <ul class="sidebar-menu">
+        <!-- Dashboard - Available to all roles -->
         <li class="<?php echo ($current_page == 'dashboard.php') ? 'active' : ''; ?>">
             <a href="dashboard">
                 <i class="fas fa-tachometer-alt"></i>
@@ -154,6 +215,8 @@ if ($is_logged_in):
             </a>
         </li>
         
+        <!-- Accounts Section - Only for accounts and manager -->
+        <?php if (has_permission($user_role, 'my_accounts')): ?>
         <li class="menu-dropdown <?php echo (in_array($current_page, ['accounts', 'account_management'])) ? 'active' : ''; ?>">
             <a href="#">
                 <i class="fas fa-wallet"></i>
@@ -162,10 +225,15 @@ if ($is_logged_in):
             </a>
             <ul class="submenu">
                 <li><a href="customer_management">My Accounts</a></li>
+                <?php if (has_permission($user_role, 'account_management')): ?>
                 <li><a href="account_management">Account Types</a></li>
+                <?php endif; ?>
             </ul>
         </li>
+        <?php endif; ?>
         
+        <!-- Transactions Section - For teller, accounts, and manager -->
+        <?php if (has_permission($user_role, 'transactions')): ?>
         <li class="menu-dropdown <?php echo (in_array($current_page, ['transactions', 'transfer'])) ? 'active' : ''; ?>">
             <a href="#">
                 <i class="fas fa-exchange-alt"></i>
@@ -174,19 +242,35 @@ if ($is_logged_in):
             </a>
             <ul class="submenu">
                 <li><a href="transactions">Transaction History</a></li>
+                <?php if (has_permission($user_role, 'transaction_processing')): ?>
                 <li><a href="transaction_processing">Process Transactions</a></li>
+                <?php endif; ?>
             </ul>
         </li>
+        <?php endif; ?>
         
-        <?php if (isset($_SESSION['employee_id'])): ?>
-        <li class="<?php echo ($current_page == 'customers.php') ? 'active' : ''; ?>">
-            <a href="customer_management">
-                <i class="fas fa-users"></i>
-                <span>Customer Management</span>
+        <!-- Credit Card Management - Only for credit_card and manager -->
+        <?php if (has_permission($user_role, 'credit_card_management')): ?>  <!-- ✅ Fixed permission key -->
+        <li class="<?php echo ($current_page == 'credit_card.php') ? 'active' : ''; ?>">
+            <a href="credit_card">
+                <i class="fas fa-credit-card"></i>
+                <span>Credit Card Management</span>
             </a>
         </li>
         <?php endif; ?>
         
+        <!-- Loan Department - Only for loan and manager -->
+        <?php if (has_permission($user_role, 'loan_management')): ?>  <!-- ✅ Fixed permission key -->
+        <li class="<?php echo ($current_page == 'loan_department.php') ? 'active' : ''; ?>">
+            <a href="loan_department">
+                <i class="fas fa-hand-holding-usd"></i>
+                <span>Loan Department</span>
+            </a>
+        </li>
+        <?php endif; ?>
+        
+        <!-- Reports Section - Only for accounts and manager -->
+        <?php if (has_permission($user_role, 'reports')): ?>
         <li class="menu-dropdown <?php echo (in_array($current_page, ['reports', 'budgets.php'])) ? 'active' : ''; ?>">
             <a href="#">
                 <i class="fas fa-chart-pie"></i>
@@ -198,18 +282,9 @@ if ($is_logged_in):
                 <li><a href="budgets">Budget Analysis</a></li>
             </ul>
         </li>
-        <li class="<?php echo ($current_page == 'credit_card.php') ? 'active' : ''; ?>">
-    <a href="credit_card">
-        <i class="fas fa-credit-card"></i>
-        <span>Credit Card Management</span>
-    </a>
-</li>
-<li class="<?php echo ($current_page == 'loan_department.php') ? 'active' : ''; ?>">
-    <a href="loan_department">
-        <i class="fas fa-hand-holding-usd"></i>
-        <span>Loan Department</span>
-    </a>
-</li>
+        <?php endif; ?>
+        
+        <!-- Settings - Available to all logged in users -->
         <li class="<?php echo ($current_page == 'settings.php') ? 'active' : ''; ?>">
             <a href="settings">
                 <i class="fas fa-cog"></i>
@@ -321,23 +396,6 @@ if ($is_logged_in):
         window.addEventListener('resize', function() {
             initializeSidebar();
         });
-        
-        // Add smooth scrolling to main content when sidebar toggles
-        if (mainContent) {
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        // Ensure smooth transition when classes change
-                        mainContent.style.transition = 'margin-left 0.3s ease';
-                    }
-                });
-            });
-            
-            observer.observe(mainContent, {
-                attributes: true,
-                attributeFilter: ['class']
-            });
-        }
     });
 </script>
 <?php endif; ?>

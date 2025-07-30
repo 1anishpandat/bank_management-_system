@@ -54,7 +54,7 @@ if (isset($_POST['register_employees'])) {
             $last_names = $_POST['employees_last_name'] ?? [];
             $job_titles = $_POST['employees_job_title'] ?? [];
             $departments = $_POST['employees_department'] ?? [];
-            $roles = $_POST['employee_role'] ?? [];
+            $roles = $_POST['role'] ?? [];
             // $_FILES['employee_photo'] will contain an array of arrays for each file input
 
             // Validate we have the same number of entries for each field
@@ -73,11 +73,11 @@ if (isset($_POST['register_employees'])) {
 
             // Prepare employee insert statement outside the loop for efficiency
             $stmt_employee = $conn->prepare("
-                INSERT INTO employee
-                (employee_id, bank_id, bank_name, bank_password, employees_first_name,
-                 employees_last_name, employees_job_title, employees_department, role, photo_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
+            INSERT INTO employee
+            (employee_id, bank_id, bank_name, bank_password, employees_first_name,
+             employees_last_name, employees_job_title, employees_department, role, photo_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
             if (!$stmt_employee) {
                 throw new Exception("Database prepare error for employee insert: " . $conn->error);
             }
@@ -109,7 +109,7 @@ if (isset($_POST['register_employees'])) {
                 if (empty($first_name) || empty($last_name) || empty($job_title) || empty($department) || empty($role)) {
                     throw new Exception("All fields for employee #" . ($i + 1) . " must be filled.");
                 }
-                $allowed_roles = ['teller', 'manager', 'admin']; // Define allowed roles
+                $allowed_roles = ['teller', 'manager', 'accounts', 'credit_card', 'loan']; // Updated allowed roles
                 if (!in_array($role, $allowed_roles)) {
                     throw new Exception("Invalid role for employee #" . ($i + 1) . ".");
                 }
@@ -140,7 +140,6 @@ $stmt_check_emp_id->close();
                 }
 
                 $emp_pass_hashed = password_hash($emp_pass_raw, PASSWORD_DEFAULT);
-
                 $stmt_employee->bind_param(
                     "iissssssss", // 'i' for employee_id, 'i' for bank_id, then 8 's' for strings
                     $emp_id, $actual_bank_id, $actual_bank_name, $emp_pass_hashed,
@@ -151,7 +150,8 @@ $stmt_check_emp_id->close();
                     throw new Exception("Error registering employee ID $emp_id: " . $stmt_employee->error);
                 }
             }
-
+// Before $conn->commit();
+error_log("Successfully registered employee ID: $emp_id with role: $role");
             $conn->commit();
             $employee_registration_success = true;
             $message = "Employees registered successfully for " . htmlspecialchars($actual_bank_name) . " (Branch ID: " . htmlspecialchars($reg_bank_id_from_form) . ")!";
@@ -253,15 +253,15 @@ include 'header.php'; // Includes common header and styling
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">Role</label>
-                                <select name="employee_role[]" required
-                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="teller" <?= (($_POST['employee_role'][0] ?? '') === 'teller') ? 'selected' : '' ?>>Teller</option>
-                                    <option value="manager" <?= (($_POST['employee_role'][0] ?? '') === 'manager') ? 'selected' : '' ?>>Manager</option>
-                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'admin') ? 'selected' : '' ?>>Admin</option>
-                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'accounts') ? 'selected' : '' ?>>Accounts</option>
-                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'credit_card') ? 'selected' : '' ?>>Credit_card</option>
-                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'loan') ? 'selected' : '' ?>>Loan</option>
-                                </select>
+                             
+<select name="role[]" required
+        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+    <option value="teller">Teller</option>
+    <option value="manager">Manager</option>
+    <option value="accounts">Accounts</option>
+    <option value="credit_card">Credit Card</option>
+    <option value="loan">Loan</option>
+</select>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">Employee Photo</label>
@@ -340,46 +340,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Employee ID</label>
-                    <input type="number" name="employee_id[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" name="employee_password[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">First Name</label>
-                    <input type="text" name="employees_first_name[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Last Name</label>
-                    <input type="text" name="employees_last_name[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Job Title</label>
-                    <input type="text" name="employees_job_title[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Department</label>
-                    <input type="text" name="employees_department[]" required
-                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                </div>
-                <div>
+              <div>
                     <label class="block text-sm font-medium text-gray-700">Role</label>
-                    <select name="employee_role[]" required
+                    <select name="role[]" required
                             class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                         <option value="teller">Teller</option>
                         <option value="manager">Manager</option>
-                        <option value="admin">Admin</option>
+                        <option value="accounts">Accounts</option>
+                        <option value="credit_card">Credit Card</option>
+                        <option value="loan">Loan</option>
                     </select>
                 </div>
-                <div>
                     <label class="block text-sm font-medium text-gray-700">Employee Photo</label>
                     <input type="file" name="employee_photo[]" accept="image/*"
                            class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
