@@ -20,30 +20,36 @@ $role = $_SESSION['role'];
 $bank_id = $_SESSION['bank_id'];
 
 // Get loan application details
-// First test if tables exist
-$tables = ['loan_applications', 'customers', 'loan_products', 'employee'];
-foreach ($tables as $table) {
-    $result = $conn->query("SHOW TABLES LIKE '$table'");
-    if ($result->num_rows == 0) {
-        die("Table $table does not exist in the database");
-    }
-}
-
-// Then test the query directly
-$test_query = "SELECT la.*, c.first_name, c.last_name, c.email, c.phone, 
+$query = "SELECT la.*, c.first_name, c.last_name, c.email, c.phone, 
           IFNULL(lp.product_name, 'Unknown Product') as product_name, 
           IFNULL(lp.interest_rate, 0) as product_interest_rate,
           e.employees_first_name as created_by_first, 
-          e.employees_last_name as created_by_last
+          e.employees_last_name as created_by_last,
+          a.employees_first_name as approved_by_first, 
+          a.employees_last_name as approved_by_last,
+          r.employees_first_name as rejected_by_first, 
+          r.employees_last_name as rejected_by_last
           FROM loan_applications la
           JOIN customers c ON la.customer_id = c.customer_id
           LEFT JOIN loan_products lp ON la.product_id = lp.product_id
           LEFT JOIN employee e ON la.created_by = e.employee_id
+          LEFT JOIN employee a ON la.approved_by = a.employee_id
+          LEFT JOIN employee r ON la.rejected_by = r.employee_id
           WHERE la.application_id = ? AND c.bank_id = ?";
-$result = $conn->query($test_query);
-if (!$result) {
-    die("Query error: " . $conn->error);
+
+$stmt = $conn->prepare($query);
+if (!$stmt) {
+    die("Error preparing query: " . $conn->error);
 }
+
+$stmt->bind_param("ii", $application_id, $bank_id);
+if (!$stmt->execute()) {
+    die("Error executing query: " . $stmt->error);
+}
+
+$result = $stmt->get_result();
+$application = $result->fetch_assoc();
+$stmt->close();
 
 if (!$application) {
     $_SESSION['error'] = "Loan application not found or you don't have permission to view it.";
@@ -62,66 +68,190 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $approved_term = $_POST['approved_term'];
         $interest_rate = $_POST['interest_rate'];
         
-        // Update application status
-        $stmt = $conn->prepare("UPDATE loan_applications 
-                               SET status = 'approved', approved_amount = ?, approved_term = ?, 
-                               interest_rate = ?, approved_by = ?, approved_date = CURDATE() 
-                               WHERE application_id = ?");
-        $stmt->bind_param("diddi", $approved_amount, $approved_term, $interest_rate, $employee_id, $application_id);
-        $stmt->execute();
+        // Start transaction
+        $conn->begin_transaction();
         
-        // Create loan account
-        $product = $conn->query("SELECT * FROM loan_products WHERE product_id = {$application['product_id']}")->fetch_assoc();
-        
-        // Calculate payment schedule
-        $monthly_rate = $interest_rate / 100 / 12;
-        $payment_amount = $approved_amount * ($monthly_rate * pow(1 + $monthly_rate, $approved_term)) / (pow(1 + $monthly_rate, $approved_term) - 1);
-        $total_interest = ($payment_amount * $approved_term) - $approved_amount;
-        
-        // Create account in accounts table
-        $account_name = "Loan - " . $product['product_name'];
-        $conn->query("INSERT INTO accounts (user_id, employee_id, account_type_id, account_name, balance, created_at) 
-                     VALUES ({$application['customer_id']}, $employee_id, 4, '$account_name', $approved_amount, NOW())");
-        $account_id = $conn->insert_id;
-        
-        // Create loan account
-        $stmt = $conn->prepare("INSERT INTO loan_accounts 
-                              (application_id, account_id, customer_id, product_id, principal_amount, interest_rate, term_months, 
-                              start_date, maturity_date, payment_frequency, payment_amount, total_interest, total_payable, balance, status, next_payment_date, created_by) 
-                              VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?, ?, ?, 'active', 
-                              DATE_ADD(CURDATE(), INTERVAL 1 MONTH), ?)");
-        $stmt->bind_param("iiiiidididdddsi", $application_id, $account_id, $application['customer_id'], $application['product_id'], $approved_amount, 
-                         $interest_rate, $approved_term, $approved_term, $product['payment_frequency'], $payment_amount, 
-                         $total_interest, $approved_amount + $total_interest, $approved_amount + $total_interest, $employee_id);
-        $stmt->execute();
-        $loan_id = $conn->insert_id;
-        
-        // Create payment schedule
-        $balance = $approved_amount;
-        for ($i = 1; $i <= $approved_term; $i++) {
-            $interest = $balance * $monthly_rate;
-            $principal = $payment_amount - $interest;
-            $balance -= $principal;
+        try {
+            // Update application status - REMOVED interest_rate column (doesn't exist in loan_applications table)
+            $stmt = $conn->prepare("UPDATE loan_applications 
+                                   SET status = 'approved', 
+                                   approved_amount = ?, 
+                                   approved_term = ?, 
+                                   approved_by = ?, 
+                                   approved_date = CURDATE() 
+                                   WHERE application_id = ?");
             
-            $stmt = $conn->prepare("INSERT INTO loan_payment_schedule 
-                                  (loan_id, installment_number, due_date, principal, interest, total_due) 
-                                  VALUES (?, ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?)");
-            $stmt->bind_param("iiidd", $loan_id, $i, $i, $principal, $interest, $payment_amount);
-            $stmt->execute();
+            // Check if prepare was successful
+            if (!$stmt) {
+                throw new Exception("Error preparing update query: " . $conn->error);
+            }
+            
+            $stmt->bind_param("diii", $approved_amount, $approved_term, $employee_id, $application_id);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Error executing update query: " . $stmt->error);
+            }
+            
+            // Create loan account only if approval was successful
+            $product_query = $conn->prepare("SELECT * FROM loan_products WHERE product_id = ?");
+            if (!$product_query) {
+                throw new Exception("Error preparing product query: " . $conn->error);
+            }
+            
+            $product_query->bind_param("i", $application['product_id']);
+            if (!$product_query->execute()) {
+                throw new Exception("Error executing product query: " . $product_query->error);
+            }
+            
+            $product = $product_query->get_result()->fetch_assoc();
+            $product_query->close();
+            
+            if (!$product) {
+                throw new Exception("Loan product not found");
+            }
+            
+            // Calculate payment schedule
+            $monthly_rate = $interest_rate / 100 / 12;
+            $payment_amount = $approved_amount * ($monthly_rate * pow(1 + $monthly_rate, $approved_term)) / (pow(1 + $monthly_rate, $approved_term) - 1);
+            $total_interest = ($payment_amount * $approved_term) - $approved_amount;
+            
+            // Create account in accounts table
+            $account_name = "Loan - " . $product['product_name'];
+            $stmt = $conn->prepare("INSERT INTO accounts 
+                                  (user_id, employee_id, account_type_id, account_name, balance, created_at) 
+                                  VALUES (?, ?, 4, ?, ?, NOW())");
+            
+            if (!$stmt) {
+                throw new Exception("Error preparing accounts insert: " . $conn->error);
+            }
+            
+            $stmt->bind_param("iisd", $application['customer_id'], $employee_id, $account_name, $approved_amount);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Error creating account: " . $stmt->error);
+            }
+            
+            $account_id = $conn->insert_id;
+            
+            // Create loan account
+            $stmt = $conn->prepare("INSERT INTO loan_accounts 
+                                  (application_id, account_id, customer_id, product_id, principal_amount, interest_rate, term_months, 
+                                  start_date, maturity_date, payment_frequency, payment_amount, total_interest, total_payable, balance, status, next_payment_date, created_by) 
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?, ?, ?, 'active', 
+                                  DATE_ADD(CURDATE(), INTERVAL 1 MONTH), ?)");
+            
+            if (!$stmt) {
+                throw new Exception("Error preparing loan_accounts insert: " . $conn->error);
+            }
+            
+            // Count: 14 parameters total
+            // 1=application_id, 2=account_id, 3=customer_id, 4=product_id, 5=principal_amount, 6=interest_rate, 7=term_months, 
+            // 8=term_months(for maturity calc), 9=payment_frequency, 10=payment_amount, 11=total_interest, 12=total_payable, 13=balance, 14=created_by
+            $total_payable = $approved_amount + $total_interest;
+            $stmt->bind_param("iiiiddiidddddi", 
+                             $application_id,           // i - 1
+                             $account_id,               // i - 2  
+                             $application['customer_id'], // i - 3
+                             $application['product_id'], // i - 4
+                             $approved_amount,          // d - 5
+                             $interest_rate,            // d - 6 (changed from i to d for decimal)
+                             $approved_term,            // i - 7
+                             $approved_term,            // i - 8 (for maturity date calculation)
+                             $product['payment_frequency'], // d - 9
+                             $payment_amount,           // d - 10
+                             $total_interest,           // d - 11
+                             $total_payable,            // d - 12
+                             $total_payable,            // d - 13 (balance = total payable initially)
+                             $employee_id);             // i - 14
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Error creating loan account: " . $stmt->error);
+            }
+            
+            $loan_id = $conn->insert_id;
+            
+            // Debug: Check if we got a valid loan_id and show more details
+            if ($loan_id == 0) {
+                // Workaround: If loan_id is not AUTO_INCREMENT, get the last inserted loan_id manually
+                $last_loan = $conn->query("SELECT MAX(loan_id) as max_id FROM loan_accounts WHERE application_id = $application_id");
+                if ($last_loan && $row = $last_loan->fetch_assoc()) {
+                    $loan_id = $row['max_id'];
+                }
+                
+                if ($loan_id == 0) {
+                    // Check if loan_accounts table exists
+                    $table_check = $conn->query("SHOW TABLES LIKE 'loan_accounts'");
+                    if ($table_check->num_rows == 0) {
+                        throw new Exception("loan_accounts table does not exist!");
+                    }
+                    
+                    // Check table structure
+                    $structure = $conn->query("DESCRIBE loan_accounts");
+                    $columns = [];
+                    while ($row = $structure->fetch_assoc()) {
+                        $columns[] = $row['Field'] . ' (' . $row['Type'] . ')' . ($row['Extra'] ? ' ' . $row['Extra'] : '');
+                    }
+                    
+                    throw new Exception("Failed to create loan account - no loan_id generated. loan_accounts table structure: " . implode(', ', $columns) . ". Affected rows: " . $stmt->affected_rows . ". Fix: loan_id column needs AUTO_INCREMENT. Run: ALTER TABLE loan_accounts MODIFY loan_id int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY;");
+                }
+            }
+            
+            // Create payment schedule
+     // Create payment schedule
+$balance = $approved_amount;
+for ($i = 1; $i <= $approved_term; $i++) {
+    $interest = $balance * $monthly_rate;
+    $principal = $payment_amount - $interest;
+    $balance -= $principal;
+    
+    $stmt = $conn->prepare("INSERT INTO loan_payment_schedule 
+                          (loan_id, installment_number, due_date, principal, interest, total_due) 
+                          VALUES (?, ?, DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?)");
+    
+    if (!$stmt) {
+        throw new Exception("Error preparing payment schedule insert: " . $conn->error);
+    }
+    
+    $stmt->bind_param("iiiddd", $loan_id, $i, $i, $principal, $interest, $payment_amount);
+    
+    if (!$stmt->execute()) {
+        throw new Exception("Error creating payment schedule: " . $stmt->error);
+    }
+}
+            
+            // Commit transaction
+            $conn->commit();
+            
+            $_SESSION['message'] = "Loan #$loan_id approved and disbursed successfully!";
+            header("Location: loan_department.php");
+            exit();
+            
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $conn->rollback();
+            $_SESSION['error'] = "Error approving loan: " . $e->getMessage();
+            header("Location: loan_application.php?id=$application_id");
+            exit();
         }
-        
-        $_SESSION['message'] = "Loan #$loan_id approved and disbursed successfully!";
-        header("Location: loan_department.php");
-        exit();
     }
     
     if (($role == 'manager' || $role == 'admin') && isset($_POST['reject_application'])) {
         $rejection_reason = $_POST['rejection_reason'] ?? 'Not specified';
         
         $stmt = $conn->prepare("UPDATE loan_applications 
-                               SET status = 'rejected', rejected_by = ?, rejected_date = CURDATE(), 
+                               SET status = 'rejected', 
+                               rejected_by = ?, 
+                               rejected_date = CURDATE(), 
                                rejection_reason = ?
                                WHERE application_id = ?");
+        
+        // Add error checking for rejection as well
+        if (!$stmt) {
+            $_SESSION['error'] = "Error preparing rejection query: " . $conn->error;
+            header("Location: loan_application.php?id=$application_id");
+            exit();
+        }
+        
         $stmt->bind_param("isi", $employee_id, $rejection_reason, $application_id);
         
         if ($stmt->execute()) {
@@ -130,11 +260,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit();
         } else {
             $_SESSION['error'] = "Failed to reject application: " . $stmt->error;
+            header("Location: loan_application.php?id=$application_id");
+            exit();
         }
     }
 }
 
-include 'header.php';
+
 ?>
 
 <!DOCTYPE html>
@@ -171,9 +303,35 @@ include 'header.php';
             padding: 15px;
             margin-bottom: 15px;
         }
+        .timeline-item {
+            position: relative;
+            padding-left: 30px;
+            margin-bottom: 20px;
+        }
+        .timeline-item:before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background-color: #dee2e6;
+        }
+        .timeline-badge {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 20px;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
+<?php include 'header.php'; ?>
     <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="h2">Loan Application #<?= $application_id ?></h1>
@@ -181,6 +339,13 @@ include 'header.php';
                 <i class="bi bi-arrow-left"></i> Back to Loan Department
             </a>
         </div>
+
+        <?php if (isset($_SESSION['message'])): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <?= $_SESSION['message'] ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <?php unset($_SESSION['message']); endif; ?>
 
         <?php if (isset($_SESSION['error'])): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -216,30 +381,44 @@ include 'header.php';
                         <p><strong>Purpose:</strong></p>
                         <p><?= nl2br(htmlspecialchars($application['purpose'])) ?></p>
                     </div>
-                    
-                    <div class="row">
-                        <div class="col-md-6">
-                            <p><strong>Application Date:</strong> <?= date('M d, Y', strtotime($application['application_date'])) ?></p>
-                            <p><strong>Created By:</strong> 
-                                <?= $application['created_by_first'] ? $application['created_by_first'] . ' ' . $application['created_by_last'] : 'System' ?>
-                            </p>
-                        </div>
+                </div>
+                
+                <!-- Decision Details -->
+                <?php if ($application['status'] == 'approved' || $application['status'] == 'rejected'): ?>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Decision Details</h5>
+                    </div>
+                    <div class="card-body">
                         <?php if ($application['status'] == 'approved'): ?>
-                        <div class="col-md-6">
-                            <p><strong>Approved Amount:</strong> $<?= number_format($application['approved_amount'], 2) ?></p>
-                            <p><strong>Approved Term:</strong> <?= $application['approved_term'] ?> months</p>
-                            <p><strong>Approved By:</strong> <?= $application['approved_by'] ?></p>
-                            <p><strong>Approval Date:</strong> <?= date('M d, Y', strtotime($application['approved_date'])) ?></p>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Approved Amount:</strong> $<?= number_format($application['approved_amount'], 2) ?></p>
+                                <p><strong>Approved Term:</strong> <?= $application['approved_term'] ?> months</p>
+                                <p><strong>Interest Rate:</strong> <?= $application['interest_rate'] ?>%</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Approved By:</strong> 
+                                    <?= $application['approved_by_first'] ? $application['approved_by_first'] . ' ' . $application['approved_by_last'] : 'System' ?>
+                                </p>
+                                <p><strong>Approval Date:</strong> <?= date('M d, Y', strtotime($application['approved_date'])) ?></p>
+                            </div>
                         </div>
                         <?php elseif ($application['status'] == 'rejected'): ?>
-                        <div class="col-md-6">
-                            <p><strong>Rejection Reason:</strong> <?= $application['rejection_reason'] ?></p>
-                            <p><strong>Rejected By:</strong> <?= $application['rejected_by'] ?></p>
-                            <p><strong>Rejection Date:</strong> <?= date('M d, Y', strtotime($application['rejected_date'])) ?></p>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <p><strong>Rejection Reason:</strong></p>
+                                <p><?= nl2br(htmlspecialchars($application['rejection_reason'])) ?></p>
+                                <p><strong>Rejected By:</strong> 
+                                    <?= $application['rejected_by_first'] ? $application['rejected_by_first'] . ' ' . $application['rejected_by_last'] : 'System' ?>
+                                </p>
+                                <p><strong>Rejection Date:</strong> <?= date('M d, Y', strtotime($application['rejected_date'])) ?></p>
+                            </div>
                         </div>
                         <?php endif; ?>
                     </div>
                 </div>
+                <?php endif; ?>
                 
                 <!-- Customer Loan History -->
                 <div class="card mb-4">
@@ -374,32 +553,43 @@ include 'header.php';
                         <h5 class="mb-0">Application Timeline</h5>
                     </div>
                     <div class="card-body">
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Application Submitted</h6>
-                                    <small class="text-muted"><?= date('M d, Y H:i', strtotime($application['application_date'])) ?></small>
-                                </div>
-                                <span class="badge bg-primary rounded-pill"><i class="bi bi-file-earmark-text"></i></span>
-                            </li>
-                            <?php if ($application['status'] == 'approved'): ?>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Application Approved</h6>
-                                    <small class="text-muted"><?= date('M d, Y H:i', strtotime($application['approved_date'])) ?></small>
-                                </div>
-                                <span class="badge bg-success rounded-pill"><i class="bi bi-check-circle"></i></span>
-                            </li>
-                            <?php elseif ($application['status'] == 'rejected'): ?>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">Application Rejected</h6>
-                                    <small class="text-muted"><?= date('M d, Y H:i', strtotime($application['rejected_date'])) ?></small>
-                                </div>
-                                <span class="badge bg-danger rounded-pill"><i class="bi bi-x-circle"></i></span>
-                            </li>
-                            <?php endif; ?>
-                        </ul>
+                        <div class="timeline-item">
+                            <span class="timeline-badge bg-primary">
+                                <i class="bi bi-file-earmark-text"></i>
+                            </span>
+                            <div>
+                                <h6 class="mb-1">Application Submitted</h6>
+                                <p class="small text-muted mb-0"><?= date('M d, Y H:i', strtotime($application['application_date'])) ?></p>
+                                <p class="small mb-0">By: <?= $application['created_by_first'] ? $application['created_by_first'] . ' ' . $application['created_by_last'] : 'System' ?></p>
+                            </div>
+                        </div>
+                        
+                        <?php if ($application['status'] == 'approved'): ?>
+                        <div class="timeline-item">
+                            <span class="timeline-badge bg-success">
+                                <i class="bi bi-check-circle"></i>
+                            </span>
+                            <div>
+                                <h6 class="mb-1">Application Approved</h6>
+                                <p class="small text-muted mb-0"><?= date('M d, Y H:i', strtotime($application['approved_date'])) ?></p>
+                                <p class="small mb-0">By: <?= $application['approved_by_first'] ? $application['approved_by_first'] . ' ' . $application['approved_by_last'] : 'System' ?></p>
+                                <p class="small mb-0">Amount: $<?= number_format($application['approved_amount'], 2) ?></p>
+                                <p class="small mb-0">Term: <?= $application['approved_term'] ?> months</p>
+                            </div>
+                        </div>
+                        <?php elseif ($application['status'] == 'rejected'): ?>
+                        <div class="timeline-item">
+                            <span class="timeline-badge bg-danger">
+                                <i class="bi bi-x-circle"></i>
+                            </span>
+                            <div>
+                                <h6 class="mb-1">Application Rejected</h6>
+                                <p class="small text-muted mb-0"><?= date('M d, Y H:i', strtotime($application['rejected_date'])) ?></p>
+                                <p class="small mb-0">By: <?= $application['rejected_by_first'] ? $application['rejected_by_first'] . ' ' . $application['rejected_by_last'] : 'System' ?></p>
+                                <p class="small mb-0">Reason: <?= $application['rejection_reason'] ?></p>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

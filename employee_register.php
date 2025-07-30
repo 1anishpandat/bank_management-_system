@@ -258,6 +258,9 @@ include 'header.php'; // Includes common header and styling
                                     <option value="teller" <?= (($_POST['employee_role'][0] ?? '') === 'teller') ? 'selected' : '' ?>>Teller</option>
                                     <option value="manager" <?= (($_POST['employee_role'][0] ?? '') === 'manager') ? 'selected' : '' ?>>Manager</option>
                                     <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'admin') ? 'selected' : '' ?>>Admin</option>
+                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'accounts') ? 'selected' : '' ?>>Accounts</option>
+                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'credit_card') ? 'selected' : '' ?>>Credit_card</option>
+                                    <option value="admin" <?= (($_POST['employee_role'][0] ?? '') === 'loan') ? 'selected' : '' ?>>Loan</option>
                                 </select>
                             </div>
                             <div>

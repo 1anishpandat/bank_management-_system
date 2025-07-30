@@ -277,7 +277,7 @@ try {
 }
 
 // Now include header after all possible redirects
-require 'header.php';
+
 
 ?>
 
@@ -368,9 +368,11 @@ require 'header.php';
         }
     </style>
 </head>
+<?php include 'header.php'; ?>
 <body class="bg-gray-50">
+
     <div class="flex h-screen overflow-hidden">
-        <?php include 'sidebar.php'; ?>
+
         
         <div class="main-content flex-1 overflow-auto">
             <div class="container mx-auto p-6">
@@ -1273,124 +1275,124 @@ require 'header.php';
             });
         });
             // Enhanced sidebar functionality with main content adjustment
-    document.addEventListener('DOMContentLoaded', function() {
-        const sidebar = document.getElementById('sidebar');
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        const sidebarOverlay = document.getElementById('sidebarOverlay');
-        const mainContent = document.querySelector('.main-content');
+    // document.addEventListener('DOMContentLoaded', function() {
+    //     const sidebar = document.getElementById('sidebar');
+    //     const sidebarToggle = document.getElementById('sidebarToggle');
+    //     const sidebarOverlay = document.getElementById('sidebarOverlay');
+    //     const mainContent = document.querySelector('.main-content');
         
-        // Initialize sidebar state based on screen size
-        function initializeSidebar() {
-            if (window.innerWidth > 768) {
-                sidebar.classList.add('active');
-                sidebar.classList.remove('collapsed');
-                if (sidebarOverlay) sidebarOverlay.classList.remove('active');
-                if (mainContent) mainContent.classList.remove('sidebar-collapsed');
-            } else {
-                sidebar.classList.remove('active');
-                if (sidebarOverlay) sidebarOverlay.classList.remove('active');
-            }
-        }
+    //     // Initialize sidebar state based on screen size
+    //     function initializeSidebar() {
+    //         if (window.innerWidth > 768) {
+    //             sidebar.classList.add('active');
+    //             sidebar.classList.remove('collapsed');
+    //             if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    //             if (mainContent) mainContent.classList.remove('sidebar-collapsed');
+    //         } else {
+    //             sidebar.classList.remove('active');
+    //             if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    //         }
+    //     }
         
-        // Initialize on load
-        initializeSidebar();
+    //     // Initialize on load
+    //     initializeSidebar();
         
-        // Toggle sidebar
-        if (sidebarToggle) {
-            sidebarToggle.addEventListener('click', function(e) {
-                e.preventDefault();
+    //     // Toggle sidebar
+    //     if (sidebarToggle) {
+    //         sidebarToggle.addEventListener('click', function(e) {
+    //             e.preventDefault();
                 
-                if (window.innerWidth > 768) {
-                    // Desktop behavior - collapse/expand sidebar
-                    sidebar.classList.toggle('collapsed');
-                    if (mainContent) {
-                        mainContent.classList.toggle('sidebar-collapsed');
-                    }
-                } else {
-                    // Mobile behavior - slide in/out sidebar
-                    sidebar.classList.toggle('active');
-                    if (sidebarOverlay) {
-                        sidebarOverlay.classList.toggle('active');
-                    }
-                }
-            });
-        }
+    //             if (window.innerWidth > 768) {
+    //                 // Desktop behavior - collapse/expand sidebar
+    //                 sidebar.classList.toggle('collapsed');
+    //                 if (mainContent) {
+    //                     mainContent.classList.toggle('sidebar-collapsed');
+    //                 }
+    //             } else {
+    //                 // Mobile behavior - slide in/out sidebar
+    //                 sidebar.classList.toggle('active');
+    //                 if (sidebarOverlay) {
+    //                     sidebarOverlay.classList.toggle('active');
+    //                 }
+    //             }
+    //         });
+    //     }
         
-        // Close sidebar when clicking overlay (mobile only)
-        if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', function() {
-                sidebar.classList.remove('active');
-                sidebarOverlay.classList.remove('active');
-            });
-        }
+    //     // Close sidebar when clicking overlay (mobile only)
+    //     if (sidebarOverlay) {
+    //         sidebarOverlay.addEventListener('click', function() {
+    //             sidebar.classList.remove('active');
+    //             sidebarOverlay.classList.remove('active');
+    //         });
+    //     }
         
-        // Close sidebar when clicking outside (enhanced)
-        document.addEventListener('click', function(event) {
-            if (window.innerWidth <= 768) {
-                if (sidebarToggle && !sidebar.contains(event.target) && 
-                    !sidebarToggle.contains(event.target) && 
-                    sidebar.classList.contains('active')) {
-                    sidebar.classList.remove('active');
-                    if (sidebarOverlay) sidebarOverlay.classList.remove('active');
-                }
-            }
-        });
+    //     // Close sidebar when clicking outside (enhanced)
+    //     document.addEventListener('click', function(event) {
+    //         if (window.innerWidth <= 768) {
+    //             if (sidebarToggle && !sidebar.contains(event.target) && 
+    //                 !sidebarToggle.contains(event.target) && 
+    //                 sidebar.classList.contains('active')) {
+    //                 sidebar.classList.remove('active');
+    //                 if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    //             }
+    //         }
+    //     });
         
-        // Toggle dropdown menus
-        document.querySelectorAll('.menu-dropdown > a').forEach(item => {
-            item.addEventListener('click', function(e) {
-                e.preventDefault();
-                const parent = this.parentElement;
+    //     // Toggle dropdown menus
+    //     document.querySelectorAll('.menu-dropdown > a').forEach(item => {
+    //         item.addEventListener('click', function(e) {
+    //             e.preventDefault();
+    //             const parent = this.parentElement;
                 
-                // Toggle current dropdown
-                parent.classList.toggle('active');
+    //             // Toggle current dropdown
+    //             parent.classList.toggle('active');
                 
-                // Close other open dropdowns
-                document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
-                    if (dropdown !== parent) {
-                        dropdown.classList.remove('active');
-                    }
-                });
-            });
-        });
+    //             // Close other open dropdowns
+    //             document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
+    //                 if (dropdown !== parent) {
+    //                     dropdown.classList.remove('active');
+    //                 }
+    //             });
+    //         });
+    //     });
         
-        // Auto-close dropdowns and sidebar on mobile when navigating
-        document.querySelectorAll('.sidebar-menu a:not(.menu-dropdown > a)').forEach(link => {
-            link.addEventListener('click', function() {
-                if (window.innerWidth <= 768) {
-                    // Close dropdowns
-                    document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
-                        dropdown.classList.remove('active');
-                    });
-                    // Close sidebar
-                    sidebar.classList.remove('active');
-                    if (sidebarOverlay) sidebarOverlay.classList.remove('active');
-                }
-            });
-        });
+    //     // Auto-close dropdowns and sidebar on mobile when navigating
+    //     document.querySelectorAll('.sidebar-menu a:not(.menu-dropdown > a)').forEach(link => {
+    //         link.addEventListener('click', function() {
+    //             if (window.innerWidth <= 768) {
+    //                 // Close dropdowns
+    //                 document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
+    //                     dropdown.classList.remove('active');
+    //                 });
+    //                 // Close sidebar
+    //                 sidebar.classList.remove('active');
+    //                 if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    //             }
+    //         });
+    //     });
         
-        // Handle window resize
-        window.addEventListener('resize', function() {
-            initializeSidebar();
-        });
+    //     // Handle window resize
+    //     window.addEventListener('resize', function() {
+    //         initializeSidebar();
+    //     });
         
-        // Add smooth scrolling to main content when sidebar toggles
-        if (mainContent) {
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        // Ensure smooth transition when classes change
-                        mainContent.style.transition = 'margin-left 0.3s ease';
-                    }
-                });
-            });
+    //     // Add smooth scrolling to main content when sidebar toggles
+    //     if (mainContent) {
+    //         const observer = new MutationObserver(function(mutations) {
+    //             mutations.forEach(function(mutation) {
+    //                 if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+    //                     // Ensure smooth transition when classes change
+    //                     mainContent.style.transition = 'margin-left 0.3s ease';
+    //                 }
+    //             });
+    //         });
             
-            observer.observe(mainContent, {
-                attributes: true,
-                attributeFilter: ['class']
-            });
-        }
-    });
+    //         observer.observe(mainContent, {
+    //             attributes: true,
+    //             attributeFilter: ['class']
+    //         });
+    //     }
+    // });
     </script>
 </body>
 </html>

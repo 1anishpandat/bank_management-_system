@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db_connect.php'; // Database connection file
+require_once 'db_connect.php';
 
 // Check if employee is logged in
 if (!isset($_SESSION['employee_id']) || !isset($_SESSION['role'])) {
@@ -64,31 +64,13 @@ function getLoanAccounts($status = null, $bank_id) {
 function getLoanProducts($bank_id) {
     global $conn;
     
-    if (!$conn) {
-        error_log("Database connection failed");
-        return [];
-    }
-
     $query = "SELECT * FROM loan_products WHERE is_active = 1";
-    
-    $column_check = $conn->query("SHOW COLUMNS FROM loan_products LIKE 'bank_id'");
-    if ($column_check && $column_check->num_rows > 0) {
-        $query .= " AND bank_id = ?";
-        $stmt = $conn->prepare($query);
-        if ($stmt) {
-            $stmt->bind_param("i", $bank_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            return $result->fetch_all(MYSQLI_ASSOC);
-        }
-    }
-    
     $result = $conn->query($query);
+    
     if ($result) {
         return $result->fetch_all(MYSQLI_ASSOC);
     }
     
-    error_log("Loan products query failed: " . $conn->error);
     return [];
 }
 
@@ -106,28 +88,58 @@ function getCustomers($bank_id) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Create new loan application
     if (isset($_POST['create_application'])) {
-        $customer_id = $_POST['customer_id'];
-        $product_id = $_POST['product_id'];
-        $applied_amount = $_POST['applied_amount'];
-        $requested_term = $_POST['requested_term'];
-        $purpose = $_POST['purpose'];
+        $customer_id = (int)$_POST['customer_id'];
+        $product_id = (int)$_POST['product_id'];
+        $applied_amount = (float)$_POST['applied_amount'];
+        $requested_term = (int)$_POST['requested_term'];
+        $purpose = $conn->real_escape_string($_POST['purpose']);
         
-        $stmt = $conn->prepare("INSERT INTO loan_applications 
-                              (customer_id, product_id, applied_amount, requested_term, purpose, status, application_date, created_by) 
-                              VALUES (?, ?, ?, ?, ?, 'pending', CURDATE(), ?)");
+        // Validate product exists
+        $product_check = $conn->query("SELECT 1 FROM loan_products WHERE product_id = $product_id");
+        if ($product_check->num_rows === 0) {
+            $_SESSION['error'] = "Invalid loan product selected";
+            header("Location: loan_department");
+            exit();
+        }
+        
+        // Validate customer exists
+        $customer_check = $conn->query("SELECT 1 FROM customers WHERE customer_id = $customer_id AND bank_id = $bank_id");
+        if ($customer_check->num_rows === 0) {
+            $_SESSION['error'] = "Invalid customer selected";
+            header("Location: loan_department");
+            exit();
+        }
+       // To explicitly exclude application_id:
+$stmt = $conn->prepare("INSERT INTO loan_applications 
+(customer_id, product_id, applied_amount, requested_term, purpose, status, application_date, created_by) 
+VALUES (?, ?, ?, ?, ?, 'pending', CURDATE(), ?)");
         $stmt->bind_param("iidisi", $customer_id, $product_id, $applied_amount, $requested_term, $purpose, $employee_id);
-        $stmt->execute();
         
-        $application_id = $conn->insert_id;
-        $_SESSION['message'] = "Loan application #$application_id created successfully!";
+        if ($stmt->execute()) {
+            $application_id = $conn->insert_id;
+            $_SESSION['message'] = "Loan application #$application_id created successfully!";
+        } else {
+            $_SESSION['error'] = "Failed to create loan application: " . $stmt->error;
+        }
+    
+        header("Location: loan_department");
+        exit();
     }
     
     // Approve loan application
     if (isset($_POST['approve_application'])) {
-        $application_id = $_POST['application_id'];
-        $approved_amount = $_POST['approved_amount'];
-        $approved_term = $_POST['approved_term'];
-        $interest_rate = $_POST['interest_rate'];
+        $application_id = (int)$_POST['application_id'];
+        $approved_amount = (float)$_POST['approved_amount'];
+        $approved_term = (int)$_POST['approved_term'];
+        $interest_rate = (float)$_POST['interest_rate'];
+        
+        // Get application details
+        $app = $conn->query("SELECT * FROM loan_applications WHERE application_id = $application_id")->fetch_assoc();
+        if (!$app) {
+            $_SESSION['error'] = "Invalid loan application";
+            header("Location: loan_department");
+            exit();
+        }
         
         // Update application status
         $stmt = $conn->prepare("UPDATE loan_applications 
@@ -137,7 +149,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute();
         
         // Create loan account
-        $app = $conn->query("SELECT * FROM loan_applications WHERE application_id = $application_id")->fetch_assoc();
         $product = $conn->query("SELECT * FROM loan_products WHERE product_id = {$app['product_id']}")->fetch_assoc();
         
         // Calculate payment schedule
@@ -151,17 +162,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                      VALUES ({$app['customer_id']}, $employee_id, 4, '$account_name', $approved_amount, NOW())");
         $account_id = $conn->insert_id;
         
-        // Create loan account
-        $stmt = $conn->prepare("INSERT INTO loan_accounts 
-                              (application_id, account_id, customer_id, product_id, principal_amount, interest_rate, term_months, 
-                              start_date, maturity_date, payment_frequency, payment_amount, total_interest, total_payable, balance, status, next_payment_date, created_by) 
-                              VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?, ?, ?, 'active', 
-                              DATE_ADD(CURDATE(), INTERVAL 1 MONTH), ?)");
-        $stmt->bind_param("iiiiidididdddsi", $application_id, $account_id, $app['customer_id'], $app['product_id'], $approved_amount, 
-                         $interest_rate, $approved_term, $approved_term, $product['payment_frequency'], $payment_amount, 
-                         $total_interest, $approved_amount + $total_interest, $approved_amount + $total_interest, $employee_id);
-        $stmt->execute();
-        $loan_id = $conn->insert_id;
+   // Create loan account
+$status = 'active'; // First assign to a variable
+$stmt = $conn->prepare("INSERT INTO loan_accounts 
+                      (application_id, account_id, customer_id, product_id, principal_amount, interest_rate, term_months, 
+                      start_date, maturity_date, payment_frequency, payment_amount, total_interest, total_payable, balance, status, next_payment_date, created_by) 
+                      VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? MONTH), ?, ?, ?, ?, ?, ?, 
+                      DATE_ADD(CURDATE(), INTERVAL 1 MONTH), ?)");
+
+// Bind parameters - note the status variable
+$stmt->bind_param(
+    "iiiiidididdddssi", // Changed to "ss" for the two string parameters
+    $application_id, 
+    $account_id, 
+    $app['customer_id'], 
+    $app['product_id'], 
+    $approved_amount,
+    $interest_rate, 
+    $approved_term, 
+    $approved_term, 
+    $product['payment_frequency'], 
+    $payment_amount,
+    $total_interest, 
+    $approved_amount + $total_interest, 
+    $approved_amount + $total_interest,
+    $status, // Now using variable instead of literal
+    $employee_id
+);
+
+$stmt->execute();
+$loan_id = $conn->insert_id;
         
         // Create payment schedule
         $balance = $approved_amount;
@@ -178,12 +208,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
         $_SESSION['message'] = "Loan #$loan_id approved and disbursed successfully!";
+        header("Location: loan_department");
+        exit();
     }
     
     // Reject loan application
     if (isset($_POST['reject_application'])) {
-        $application_id = $_POST['application_id'];
-        $rejection_reason = $_POST['rejection_reason'] ?? 'Not specified';
+        $application_id = (int)$_POST['application_id'];
+        $rejection_reason = $conn->real_escape_string($_POST['rejection_reason'] ?? 'Not specified');
         
         $stmt = $conn->prepare("UPDATE loan_applications 
                                SET status = 'rejected', rejected_by = ?, rejected_date = CURDATE(), 
@@ -196,17 +228,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } else {
             $_SESSION['error'] = "Failed to reject application: " . $stmt->error;
         }
+        
+        header("Location: loan_department");
+        exit();
     }
     
     // Process loan payment
     if (isset($_POST['process_payment'])) {
-        $loan_id = $_POST['loan_id'];
-        $amount = $_POST['amount'];
-        $payment_method = $_POST['payment_method'];
-        $reference_number = $_POST['reference_number'];
+        $loan_id = (int)$_POST['loan_id'];
+        $amount = (float)$_POST['amount'];
+        $payment_method = $conn->real_escape_string($_POST['payment_method']);
+        $reference_number = $conn->real_escape_string($_POST['reference_number'] ?? '');
         
         // Get loan details
         $loan = $conn->query("SELECT * FROM loan_accounts WHERE loan_id = $loan_id")->fetch_assoc();
+        if (!$loan) {
+            $_SESSION['error'] = "Invalid loan account";
+            header("Location: loan_department");
+            exit();
+        }
         
         // Calculate payment allocation
         $interest = min($amount, $loan['balance'] * ($loan['interest_rate'] / 100 / 12));
@@ -234,47 +274,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                      VALUES ({$loan['customer_id']}, {$loan['customer_id']}, {$loan['account_id']}, 4, 'EXPENSE', $amount, 'Loan Payment', CURDATE(), $employee_id)");
         
         $_SESSION['message'] = "Payment #$payment_id processed successfully!";
+        header("Location: loan_department");
+        exit();
     }
     
     // Add new loan product
     if (isset($_POST['add_loan_product'])) {
-        $product_name = $_POST['product_name'];
-        $description = $_POST['description'];
-        $min_amount = $_POST['min_amount'];
-        $max_amount = $_POST['max_amount'];
-        $interest_rate = $_POST['interest_rate'];
-        $term_min = $_POST['term_min'];
-        $term_max = $_POST['term_max'];
-        $payment_frequency = $_POST['payment_frequency'];
+        $product_name = $conn->real_escape_string($_POST['product_name']);
+        $description = $conn->real_escape_string($_POST['description']);
+        $min_amount = (float)$_POST['min_amount'];
+        $max_amount = (float)$_POST['max_amount'];
+        $interest_rate = (float)$_POST['interest_rate'];
+        $term_min = (int)$_POST['term_min'];
+        $term_max = (int)$_POST['term_max'];
+        $payment_frequency = $conn->real_escape_string($_POST['payment_frequency']);
         
         $loan_type_id = 1; // Default value
         
-        $sql = "INSERT INTO loan_products 
-               (product_name, description, loan_type_id, min_amount, max_amount, 
-               interest_rate, term_min, term_max, payment_frequency, created_by) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $stmt = $conn->prepare("INSERT INTO loan_products 
+                               (product_name, description, loan_type_id, min_amount, max_amount, 
+                               interest_rate, term_min, term_max, payment_frequency, created_by) 
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssidddddii", 
+            $product_name, $description, $loan_type_id, $min_amount, $max_amount, 
+            $interest_rate, $term_min, $term_max, $payment_frequency, $employee_id);
         
-        $stmt = $conn->prepare($sql);
-        
-        if ($stmt === false) {
-            $_SESSION['error'] = "Failed to prepare statement: " . $conn->error;
-            error_log("Prepare failed: " . $conn->error);
+        if ($stmt->execute()) {
+            $_SESSION['message'] = "Loan product '$product_name' added successfully!";
         } else {
-            $stmt->bind_param("ssidddddii", 
-                $product_name, $description, $loan_type_id, $min_amount, $max_amount, 
-                $interest_rate, $term_min, $term_max, $payment_frequency, $employee_id);
-            
-            if ($stmt->execute()) {
-                $_SESSION['message'] = "Loan product '$product_name' added successfully!";
-            } else {
-                $_SESSION['error'] = "Failed to add loan product: " . $stmt->error;
-                error_log("Execute failed: " . $stmt->error);
-            }
-            
-            $stmt->close();
+            $_SESSION['error'] = "Failed to add loan product: " . $stmt->error;
         }
         
-        header("Location: loan_department.php");
+        header("Location: loan_department");
         exit();
     }
 }
@@ -287,7 +318,8 @@ $active_loans = getLoanAccounts('active', $bank_id);
 $delinquent_loans = getLoanAccounts('defaulted', $bank_id);
 $loan_products = getLoanProducts($bank_id);
 $customers = getCustomers($bank_id);
-include 'header.php';
+
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -297,8 +329,12 @@ include 'header.php';
     <title>Bank Management System - Loan Department</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    
+    
     <style>
-        .nav-link {
+        
+    .nav-link {
             color: #495057;
         }
         .nav-link.active {
@@ -313,20 +349,14 @@ include 'header.php';
             font-size: 0.75rem;
             padding: 0.35em 0.65em;
         }
-        .sidebar {
-            position: fixed;
-            left: -250px;
-            top: 0;
-            width: 250px;
-            height: 100vh;
-            background-color: #2c3e50;
-            transition: left 0.3s ease;
-            z-index: 1000;
-            overflow-y: auto;
-        }
+
+    
+    
     </style>
 </head>
 <body>
+<?php include 'header.php'; ?>
+
     <div class="container-fluid">
         <div class="row">
             <!-- Main Content -->
@@ -432,9 +462,7 @@ include 'header.php';
                                             <td><?= date('M d, Y', strtotime($app['application_date'])) ?></td>
                                             <td>
                                                 <?php if ($role == 'manager' || $role == 'admin'): ?>
-                                                <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#approveModal<?= $app['application_id'] ?>">
-                                                    <i class="bi bi-check-circle"></i> Review
-                                                </button>
+                                               
                                                 <?php endif; ?>
                                                 <a href="loan_application?id=<?= $app['application_id'] ?>" class="btn btn-sm btn-primary">
                                                     <i class="bi bi-eye"></i> View
@@ -617,7 +645,7 @@ include 'header.php';
                                 <option value="">Select Customer</option>
                                 <?php foreach ($customers as $customer): ?>
                                 <option value="<?= $customer['customer_id'] ?>">
-                                    <?= $customer['first_name'] ?> <?= $customer['last_name'] ?> (<?= $customer['email'] ?>)
+                                    <?= htmlspecialchars($customer['first_name'] . ' ' . $customer['last_name']) ?> (<?= htmlspecialchars($customer['email']) ?>)
                                 </option>
                                 <?php endforeach; ?>
                             </select>
@@ -633,7 +661,7 @@ include 'header.php';
                                             data-max="<?= $product['max_amount'] ?>" 
                                             data-term-min="<?= $product['term_min'] ?>" 
                                             data-term-max="<?= $product['term_max'] ?>">
-                                        <?= $product['product_name'] ?> (<?= $product['interest_rate'] ?>% APR)
+                                        <?= htmlspecialchars($product['product_name']) ?> (<?= htmlspecialchars($product['interest_rate']) ?>% APR)
                                     </option>
                                     <?php endforeach; ?>
                                 <?php else: ?>
@@ -685,7 +713,7 @@ include 'header.php';
                                 <?php if (!empty($active_loans)): ?>
                                     <?php foreach ($active_loans as $loan): ?>
                                     <option value="<?= $loan['loan_id'] ?>">
-                                        #<?= $loan['loan_id'] ?> - <?= $loan['first_name'] ?> <?= $loan['last_name'] ?> ($<?= number_format($loan['balance'], 2) ?> balance)
+                                        #<?= $loan['loan_id'] ?> - <?= htmlspecialchars($loan['first_name'] . ' ' . $loan['last_name']) ?> ($<?= number_format($loan['balance'], 2) ?> balance)
                                     </option>
                                     <?php endforeach; ?>
                                 <?php else: ?>
@@ -805,30 +833,30 @@ include 'header.php';
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label">Customer</label>
-                            <p class="form-control-static"><?= $app['first_name'] ?> <?= $app['last_name'] ?></p>
+                            <p class="form-control-static"><?= htmlspecialchars($app['first_name'] . ' ' . $app['last_name']) ?></p>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Product</label>
-                            <p class="form-control-static"><?= $app['product_name'] ?></p>
+                            <p class="form-control-static"><?= htmlspecialchars($app['product_name']) ?></p>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Requested Amount</label>
-                            <p class="form-control-static">$<?= number_format($app['applied_amount'], 2) ?></p>
+                            <p class="form-control-static">$<?= number_format(htmlspecialchars($app['applied_amount']), 2) ?></p>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Requested Term</label>
-                            <p class="form-control-static"><?= $app['requested_term'] ?> months</p>
+                            <p class="form-control-static"><?= htmlspecialchars($app['requested_term']) ?> months</p>
                         </div>
                         <div class="mb-3">
                             <label for="approved_amount" class="form-label">Approved Amount</label>
                             <div class="input-group">
                                 <span class="input-group-text">$</span>
-                                <input type="number" class="form-control" id="approved_amount" name="approved_amount" value="<?= $app['applied_amount'] ?>" step="0.01" min="0" required>
+                                <input type="number" class="form-control" id="approved_amount" name="approved_amount" value="<?= htmlspecialchars($app['applied_amount']) ?>" step="0.01" min="0" required>
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="approved_term" class="form-label">Approved Term (months)</label>
-                            <input type="number" class="form-control" id="approved_term" name="approved_term" value="<?= $app['requested_term'] ?>" min="1" required>
+                            <input type="number" class="form-control" id="approved_term" name="approved_term" value="<?= htmlspecialchars($app['requested_term']) ?>" min="1" required>
                         </div>
                         <div class="mb-3">
                             <label for="interest_rate" class="form-label">Interest Rate (%)</label>
@@ -862,22 +890,22 @@ include 'header.php';
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Customer</label>
-                        <p class="form-control-static"><?= $loan['first_name'] ?> <?= $loan['last_name'] ?></p>
+                        <p class="form-control-static"><?= htmlspecialchars($loan['first_name'] . ' ' . $loan['last_name']) ?></p>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Email</label>
-                        <p class="form-control-static"><?= $loan['email'] ?></p>
+                        <p class="form-control-static"><?= htmlspecialchars($loan['email']) ?></p>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Phone</label>
-                        <p class="form-control-static"><?= $loan['phone'] ?></p>
+                        <p class="form-control-static"><?= htmlspecialchars($loan['phone']) ?></p>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Loan Details</label>
                         <p class="form-control-static">
-                            #<?= $loan['loan_id'] ?> - <?= $loan['product_name'] ?><br>
-                            Balance: $<?= number_format($loan['balance'], 2) ?><br>
-                            Days Delinquent: <?= $loan['days_delinquent'] ?>
+                            #<?= htmlspecialchars($loan['loan_id']) ?> - <?= htmlspecialchars($loan['product_name']) ?><br>
+                            Balance: $<?= number_format(htmlspecialchars($loan['balance']), 2) ?><br>
+                            Days Delinquent: <?= htmlspecialchars($loan['days_delinquent']) ?>
                         </p>
                     </div>
                     <div class="mb-3">
@@ -896,7 +924,7 @@ include 'header.php';
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Update amount and term ranges when product is selected
+        // Update amount and term ranges when product is selected in New Application Modal
         document.getElementById('product_id').addEventListener('change', function() {
             const selectedOption = this.options[this.selectedIndex];
             if (selectedOption.value === "") return;
@@ -908,11 +936,11 @@ include 'header.php';
             
             document.getElementById('applied_amount').min = minAmount;
             document.getElementById('applied_amount').max = maxAmount;
-            document.getElementById('applied_amount').value = minAmount;
+            document.getElementById('applied_amount').value = minAmount; // Set initial value to min
             
             document.getElementById('requested_term').min = minTerm;
             document.getElementById('requested_term').max = maxTerm;
-            document.getElementById('requested_term').value = minTerm;
+            document.getElementById('requested_term').value = minTerm; // Set initial value to min
             
             document.getElementById('amountRange').textContent = `Range: $${minAmount} - $${maxAmount}`;
             document.getElementById('termRange').textContent = `Range: ${minTerm} - ${maxTerm} months`;
@@ -921,12 +949,27 @@ include 'header.php';
         // Auto-fill interest rate when approving application
         <?php foreach ($pending_applications as $app): ?>
         document.getElementById('approveModal<?= $app['application_id'] ?>').addEventListener('shown.bs.modal', function() {
-            const productId = <?= $app['product_id'] ?>;
-            fetch('get_product_details.php?id=' + productId)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('interest_rate').value = data.interest_rate;
-                });
+            // Find the product ID dynamically from the modal's context if needed,
+            // or ensure 'product_id' is directly available in the $app array for simplicity.
+            // Assuming $app['product_id'] is available as it's used in PHP.
+            const productId = <?= htmlspecialchars($app['product_id']) ?>;
+            // Get the interest rate from the data attributes of the loan products in the modal's product dropdown
+            // This is a workaround since the original `get_product_details.php` is not provided.
+            const productSelect = document.querySelector('#newApplicationModal #product_id'); // Using the ID from the new application modal
+            let interestRate = 0;
+            if (productSelect) {
+                for (let i = 0; i < productSelect.options.length; i++) {
+                    if (productSelect.options[i].value == productId) {
+                        interestRate = productSelect.options[i].getAttribute('data-interest-rate');
+                        break;
+                    }
+                }
+            }
+            // Set the interest rate in the approval modal's input field
+            const interestRateInput = this.querySelector('#interest_rate');
+            if (interestRateInput) {
+                interestRateInput.value = interestRate;
+            }
         });
         <?php endforeach; ?>
     </script>
