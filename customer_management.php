@@ -17,11 +17,23 @@ if (!isset($_SESSION['employee_id'])) {
     exit();
 }
 
-// Get logged-in employee's bank_id
+// Get logged-in employee's bank_id and bank name
 $loggedInBankId = $_SESSION['bank_id'];
 $employee_id = $_SESSION['employee_id'];
 $employee_role = $_SESSION['role'] ?? 'teller';
 $action = $_GET['action'] ?? 'list';
+
+// Get bank name
+$bank_name = '';
+$stmt_bank = $conn->prepare("SELECT bank_name FROM bank_details WHERE bank_id = ?");
+$stmt_bank->bind_param("i", $loggedInBankId);
+$stmt_bank->execute();
+$result_bank = $stmt_bank->get_result();
+if ($result_bank && $result_bank->num_rows > 0) {
+    $bank = $result_bank->fetch_assoc();
+    $bank_name = $bank['bank_name'];
+}
+$stmt_bank->close();
 
 // Get account types for dropdown
 $account_types = [];
@@ -36,127 +48,245 @@ $stmt_types->close();
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($action == 'add') {
-        // Customer personal information
-        $first_name = substr(sanitize_input($_POST['first_name']), 0, 20); // Enforce 20 char limit
-        $last_name = substr(sanitize_input($_POST['last_name']), 0, 20); // Enforce 20 char limit
-        $email = sanitize_input($_POST['email']);
-        $phone = sanitize_input($_POST['phone']);
-        $address = sanitize_input($_POST['address']);
-        $date_of_birth = sanitize_input($_POST['date_of_birth']);
-        $id_proof_type = sanitize_input($_POST['id_proof_type']);
-        $id_proof_number = sanitize_input($_POST['id_proof_number']);
+        // Initialize error array
+        $errors = [];
         
-        // Account information
-        $account_type_id = sanitize_input($_POST['account_type_id']);
-        $initial_deposit = sanitize_input($_POST['initial_deposit']);
-        $account_name = sanitize_input($_POST['account_name']);
-
-        $photo_path = null;
-
-        // Handle photo upload
-        if (isset($_FILES['customer_photo']) && $_FILES['customer_photo']['error'] == UPLOAD_ERR_OK) {
-            $target_dir = "uploads/customer_photos/";
-            if (!is_dir($target_dir)) {
-                mkdir($target_dir, 0777, true);
-            }
-            $file_extension = pathinfo($_FILES['customer_photo']['name'], PATHINFO_EXTENSION);
-            $new_file_name = uniqid('photo_', true) . '.' . $file_extension;
-            $target_file = $target_dir . $new_file_name;
-
-            if (move_uploaded_file($_FILES['customer_photo']['tmp_name'], $target_file)) {
-                $photo_path = $target_file;
-            } else {
-                $error_message = "Error uploading photo.";
-            }
-        } elseif (isset($_FILES['customer_photo']) && $_FILES['customer_photo']['error'] != UPLOAD_ERR_NO_FILE) {
-            $error_message = "File upload error: " . $_FILES['customer_photo']['error'];
+        // Customer personal information validation
+        $first_name = substr(sanitize_input($_POST['first_name']), 0, 20);
+        if (empty($first_name)) {
+            $errors['first_name'] = "First name is required";
+        } elseif (!preg_match("/^[a-zA-Z-' ]*$/", $first_name)) {
+            $errors['first_name'] = "Only letters and white space allowed";
         }
 
-        // Start transaction
-        $conn->begin_transaction();
+        $last_name = substr(sanitize_input($_POST['last_name']), 0, 20);
+        if (empty($last_name)) {
+            $errors['last_name'] = "Last name is required";
+        } elseif (!preg_match("/^[a-zA-Z-' ]*$/", $last_name)) {
+            $errors['last_name'] = "Only letters and white space allowed";
+        }
 
-        try {
-            // Insert customer
-            $stmt_customer = $conn->prepare("INSERT INTO customers 
-                (bank_id, first_name, last_name, email, phone, address, date_of_birth, 
-                id_proof_type, id_proof_number, photo_path, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-            
-            if (!$stmt_customer) {
-                throw new Exception("SQL prepare error for customer: " . $conn->error);
-            }
-            
-            $stmt_customer->bind_param("isssssssss", $loggedInBankId, $first_name, $last_name, 
-                $email, $phone, $address, $date_of_birth, $id_proof_type, $id_proof_number, $photo_path);
-            
-            if (!$stmt_customer->execute()) {
-                throw new Exception("Error adding customer: " . $stmt_customer->error);
-            }
-            
-            $customer_id = $stmt_customer->insert_id;
-            $stmt_customer->close();
+        $email = sanitize_input($_POST['email']);
+        if (empty($email)) {
+            $errors['email'] = "Email is required";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = "Invalid email format";
+        }
 
-            // Generate account number (simple random for demo)
-            $account_number = mt_rand(1000000000, 9999999999);
-            
-            // Insert account
-            $stmt_account = $conn->prepare("INSERT INTO accounts 
-                (user_id, employee_id, account_type_id, account_name, account_number, 
-                balance, currency, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, 'USD', NOW())");
-            
-            if (!$stmt_account) {
-                throw new Exception("SQL prepare error for account: " . $conn->error);
-            }
+        $phone = sanitize_input($_POST['phone']);
+        if (empty($phone)) {
+            $errors['phone'] = "Phone number is required";
+        } elseif (!preg_match("/^[0-9]{10,15}$/", $phone)) {
+            $errors['phone'] = "Invalid phone number format (10-15 digits)";
+        }
 
-            $stmt_account->bind_param("iiisid", $customer_id, $employee_id, $account_type_id, 
-                $account_name, $account_number, $initial_deposit);
-            
-            if (!$stmt_account->execute()) {
-                throw new Exception("Error creating account: " . $stmt_account->error);
-            }
-            
-            $account_id = $stmt_account->insert_id;
-            $stmt_account->close();
+        $address = sanitize_input($_POST['address']);
+        if (empty($address)) {
+            $errors['address'] = "Address is required";
+        } elseif (strlen($address) > 255) {
+            $errors['address'] = "Address too long (max 255 characters)";
+        }
 
-            // Record initial deposit transaction
-            if ($initial_deposit > 0) {
-                // Corrected: user_id should be customer_id, and employee_id is also logged
-                $stmt_transaction = $conn->prepare("INSERT INTO transactions 
-                    (user_id, customer_id, account_id, category_id, transaction_type, 
-                    amount, description, transaction_date, employee_id) 
-                    VALUES (?, ?, ?, 1, 'INCOME', ?, 'Initial deposit', CURDATE(), ?)");
+        $date_of_birth = sanitize_input($_POST['date_of_birth']);
+        if (empty($date_of_birth)) {
+            $errors['date_of_birth'] = "Date of birth is required";
+        } else {
+            $dob = new DateTime($date_of_birth);
+            $today = new DateTime();
+            $age = $today->diff($dob)->y;
+            if ($age < 18) {
+                $errors['date_of_birth'] = "Customer must be at least 18 years old";
+            }
+        }
+
+        $id_proof_type = sanitize_input($_POST['id_proof_type']);
+        $allowed_id_types = ['Passport', 'Driver License', 'National ID', 'PAN Card', 'Aadhaar Card'];
+        if (empty($id_proof_type)) {
+            $errors['id_proof_type'] = "ID proof type is required";
+        } elseif (!in_array($id_proof_type, $allowed_id_types)) {
+            $errors['id_proof_type'] = "Invalid ID proof type";
+        }
+
+        $id_proof_number = sanitize_input($_POST['id_proof_number']);
+        if (empty($id_proof_number)) {
+            $errors['id_proof_number'] = "ID proof number is required";
+        } elseif (strlen($id_proof_number) > 50) {
+            $errors['id_proof_number'] = "ID number too long (max 50 characters)";
+        }
+
+        // Account information validation
+        $account_type_id = sanitize_input($_POST['account_type_id']);
+        if (empty($account_type_id)) {
+            $errors['account_type_id'] = "Account type is required";
+        } else {
+            $valid_account_type = false;
+            foreach ($account_types as $type) {
+                if ($type['type_id'] == $account_type_id) {
+                    $valid_account_type = true;
+                    break;
+                }
+            }
+            if (!$valid_account_type) {
+                $errors['account_type_id'] = "Invalid account type selected";
+            }
+        }
+
+        $initial_deposit = sanitize_input($_POST['initial_deposit']);
+        if (empty($initial_deposit)) {
+            $errors['initial_deposit'] = "Initial deposit is required";
+        } elseif (!is_numeric($initial_deposit) || $initial_deposit < 0) {
+            $errors['initial_deposit'] = "Initial deposit must be a positive number";
+        } elseif ($account_type_id == 3 && $initial_deposit < 1000) {
+            $errors['initial_deposit'] = "Fixed Deposit requires minimum $1000";
+        } elseif ($account_type_id == 6 && $initial_deposit < 500) {
+            $errors['initial_deposit'] = "Credit Card requires minimum $500";
+        }
+
+        $account_name = sanitize_input($_POST['account_name']);
+        if (empty($account_name)) {
+            $errors['account_name'] = "Account name is required";
+        } elseif (strlen($account_name) > 50) {
+            $errors['account_name'] = "Account name too long (max 50 characters)";
+        }
+
+        $photo_path = null;
+        // Handle photo upload validation
+        if (isset($_FILES['customer_photo']) && $_FILES['customer_photo']['error'] != UPLOAD_ERR_NO_FILE) {
+            if ($_FILES['customer_photo']['error'] == UPLOAD_ERR_OK) {
+                $target_dir = "uploads/customer_photos/";
+                if (!is_dir($target_dir)) {
+                    mkdir($target_dir, 0777, true);
+                }
                 
-                if (!$stmt_transaction) {
-                    throw new Exception("SQL prepare error for transaction: " . $conn->error);
+                // Check file type
+                $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+                $file_type = $_FILES['customer_photo']['type'];
+                if (!in_array($file_type, $allowed_types)) {
+                    $errors['customer_photo'] = "Only JPG, PNG, and GIF files are allowed";
+                }
+                
+                // Check file size (max 2MB)
+                $max_size = 2 * 1024 * 1024; // 2MB
+                if ($_FILES['customer_photo']['size'] > $max_size) {
+                    $errors['customer_photo'] = "File size must be less than 2MB";
+                }
+                
+                if (!isset($errors['customer_photo'])) {
+                    $file_extension = pathinfo($_FILES['customer_photo']['name'], PATHINFO_EXTENSION);
+                    $new_file_name = uniqid('photo_', true) . '.' . $file_extension;
+                    $target_file = $target_dir . $new_file_name;
+
+                    if (move_uploaded_file($_FILES['customer_photo']['tmp_name'], $target_file)) {
+                        $photo_path = $target_file;
+                    } else {
+                        $errors['customer_photo'] = "Error uploading photo";
+                    }
+                }
+            } else {
+                $errors['customer_photo'] = "File upload error: " . $_FILES['customer_photo']['error'];
+            }
+        }
+
+        // If no validation errors, proceed with database operations
+        if (empty($errors)) {
+            // Start transaction
+            $conn->begin_transaction();
+
+            try {
+                // Insert customer with bank_id (removed employee_id from customers table)
+                $stmt_customer = $conn->prepare("INSERT INTO customers 
+                    (bank_id, first_name, last_name, email, phone, address, date_of_birth, 
+                    id_proof_type, id_proof_number, photo_path, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                
+                if (!$stmt_customer) {
+                    throw new Exception("SQL prepare error for customer: " . $conn->error);
+                }
+                
+                $stmt_customer->bind_param("isssssssss", $loggedInBankId, $first_name, $last_name, 
+                    $email, $phone, $address, $date_of_birth, $id_proof_type, $id_proof_number, $photo_path);
+                
+                if (!$stmt_customer->execute()) {
+                    throw new Exception("Error adding customer: " . $stmt_customer->error);
+                }
+                
+                $customer_id = $stmt_customer->insert_id;
+                $stmt_customer->close();
+
+                // Generate account number (simple random for demo)
+                $account_number = mt_rand(1000000000, 9999999999);
+                
+                // Insert account with bank_name and employee_id
+                $stmt_account = $conn->prepare("INSERT INTO accounts 
+                    (user_id, employee_id, account_type_id, account_name, bank_name, account_number, 
+                    balance, currency, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'USD', NOW())");
+                
+                if (!$stmt_account) {
+                    throw new Exception("SQL prepare error for account: " . $conn->error);
                 }
 
-                // Bind parameters: (user_id as customer_id), (customer_id), (account_id), (amount), (employee_id)
-                $stmt_transaction->bind_param("iiidi", $customer_id, $customer_id, $account_id, $initial_deposit, $employee_id);
+                $stmt_account->bind_param("iiisssd", $customer_id, $employee_id, $account_type_id, 
+                    $account_name, $bank_name, $account_number, $initial_deposit);
                 
-                if (!$stmt_transaction->execute()) {
-                    throw new Exception("Error recording transaction: " . $stmt_transaction->error);
+                if (!$stmt_account->execute()) {
+                    throw new Exception("Error creating account: " . $stmt_account->error);
                 }
                 
-                $stmt_transaction->close();
-            }
+                $account_id = $stmt_account->insert_id;
+                $stmt_account->close();
 
-            // Commit transaction
-            $conn->commit();
-            
-            $success_message = "Customer account opened successfully! Account Number: " . $account_number;
-            $action = 'list';
-        } catch (Exception $e) {
-            $conn->rollback();
-            $error_message = $e->getMessage();
+                // Record initial deposit transaction
+                if ($initial_deposit > 0) {
+                    $stmt_transaction = $conn->prepare("INSERT INTO transactions 
+                        (user_id, customer_id, account_id, category_id, transaction_type, 
+                        amount, description, transaction_date, employee_id) 
+                        VALUES (?, ?, ?, 1, 'INCOME', ?, 'Initial deposit', CURDATE(), ?)");
+                    
+                    if (!$stmt_transaction) {
+                        throw new Exception("SQL prepare error for transaction: " . $conn->error);
+                    }
+
+                    $stmt_transaction->bind_param("iiidi", $customer_id, $customer_id, $account_id, $initial_deposit, $employee_id);
+                    
+                    if (!$stmt_transaction->execute()) {
+                        throw new Exception("Error recording transaction: " . $stmt_transaction->error);
+                    }
+                    
+                    $stmt_transaction->close();
+                }
+
+                // Commit transaction
+                $conn->commit();
+                
+                $success_message = "Customer account opened successfully! Account Number: " . $account_number;
+                $action = 'list';
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error_message = $e->getMessage();
+            }
+        } else {
+            $error_message = "Please correct the following errors:";
         }
     }
 }
 
-// Get customers list
+// Get customers list with employee and bank information
 $customers = [];
 try {
-    $stmt_customers = $conn->prepare("SELECT * FROM customers WHERE bank_id = ? ORDER BY created_at DESC");
+    $stmt_customers = $conn->prepare("
+        SELECT c.*, 
+               e.employees_first_name, 
+               e.employees_last_name, 
+               b.bank_name 
+        FROM customers c
+        LEFT JOIN accounts a ON c.customer_id = a.user_id
+        LEFT JOIN employee e ON a.employee_id = e.employee_id
+        LEFT JOIN bank_details b ON c.bank_id = b.bank_id
+        WHERE c.bank_id = ? 
+        GROUP BY c.customer_id
+        ORDER BY c.created_at DESC
+    ");
     if ($stmt_customers === false) {
         throw new Exception("SQL prepare error: " . $conn->error);
     }
@@ -208,6 +338,13 @@ include 'header.php';
     <?php if (isset($error_message)): ?>
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             <?= $error_message ?>
+            <?php if (!empty($errors)): ?>
+                <ul class="mt-2 list-disc list-inside">
+                    <?php foreach ($errors as $error): ?>
+                        <li><?= $error ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
@@ -221,55 +358,88 @@ include 'header.php';
                         <div>
                             <label class="block text-sm font-medium text-gray-700">First Name*</label>
                             <input type="text" name="first_name" required maxlength="20"
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['first_name']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['first_name']) ? htmlspecialchars($_POST['first_name']) : '' ?>">
+                            <?php if (isset($errors['first_name'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['first_name'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Last Name*</label>
                             <input type="text" name="last_name" required maxlength="20"
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['last_name']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['last_name']) ? htmlspecialchars($_POST['last_name']) : '' ?>">
+                            <?php if (isset($errors['last_name'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['last_name'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Date of Birth*</label>
                             <input type="date" name="date_of_birth" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['date_of_birth']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['date_of_birth']) ? htmlspecialchars($_POST['date_of_birth']) : '' ?>">
+                            <?php if (isset($errors['date_of_birth'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['date_of_birth'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">ID Proof Type*</label>
                             <select name="id_proof_type" required 
-                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                    class="mt-1 block w-full border <?= isset($errors['id_proof_type']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2">
                                 <option value="">Select ID Type</option>
-                                <option value="Passport">Passport</option>
-                                <option value="Driver License">Driver License</option>
-                                <option value="National ID">National ID</option>
-                                <option value="PAN Card">PAN Card</option>
-                                <option value="Aadhaar Card">Aadhaar Card</option>
+                                <option value="Passport" <?= (isset($_POST['id_proof_type']) && $_POST['id_proof_type'] == 'Passport') ? 'selected' : '' ?>>Passport</option>
+                                <option value="Driver License" <?= (isset($_POST['id_proof_type']) && $_POST['id_proof_type'] == 'Driver License') ? 'selected' : '' ?>>Driver License</option>
+                                <option value="National ID" <?= (isset($_POST['id_proof_type']) && $_POST['id_proof_type'] == 'National ID') ? 'selected' : '' ?>>National ID</option>
+                                <option value="PAN Card" <?= (isset($_POST['id_proof_type']) && $_POST['id_proof_type'] == 'PAN Card') ? 'selected' : '' ?>>PAN Card</option>
+                                <option value="Aadhaar Card" <?= (isset($_POST['id_proof_type']) && $_POST['id_proof_type'] == 'Aadhaar Card') ? 'selected' : '' ?>>Aadhaar Card</option>
                             </select>
+                            <?php if (isset($errors['id_proof_type'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['id_proof_type'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">ID Proof Number*</label>
                             <input type="text" name="id_proof_number" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['id_proof_number']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['id_proof_number']) ? htmlspecialchars($_POST['id_proof_number']) : '' ?>">
+                            <?php if (isset($errors['id_proof_number'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['id_proof_number'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Phone Number*</label>
                             <input type="tel" name="phone" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['phone']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : '' ?>">
+                            <?php if (isset($errors['phone'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['phone'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Email Address*</label>
                             <input type="email" name="email" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['email']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['email']) ? htmlspecialchars($_POST['email']) : '' ?>">
+                            <?php if (isset($errors['email'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['email'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-gray-700">Address*</label>
                             <textarea name="address" required rows="3"
-                                      class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"></textarea>
+                                      class="mt-1 block w-full border <?= isset($errors['address']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"><?= isset($_POST['address']) ? htmlspecialchars($_POST['address']) : '' ?></textarea>
+                            <?php if (isset($errors['address'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['address'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-gray-700">Customer Photo</label>
                             <input type="file" name="customer_photo" accept="image/*"
                                    class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                            <p class="mt-1 text-sm text-gray-500">Upload a photo of the customer (optional).</p>
+                            <?php if (isset($errors['customer_photo'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['customer_photo'] ?></p>
+                            <?php endif; ?>
+                            <p class="mt-1 text-sm text-gray-500">Upload a photo of the customer (optional). Max 2MB. Allowed types: JPG, PNG, GIF.</p>
                         </div>
                     </div>
                 </div>
@@ -280,25 +450,36 @@ include 'header.php';
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Account Type*</label>
                             <select name="account_type_id" required 
-                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                    class="mt-1 block w-full border <?= isset($errors['account_type_id']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2">
                                 <option value="">Select Account Type</option>
                                 <?php foreach ($account_types as $type): ?>
-                                    <option value="<?= $type['type_id'] ?>">
+                                    <option value="<?= $type['type_id'] ?>" <?= (isset($_POST['account_type_id']) && $_POST['account_type_id'] == $type['type_id']) ? 'selected' : '' ?>>
                                         <?= $type['type_name'] ?> (<?= $type['category'] ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php if (isset($errors['account_type_id'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['account_type_id'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Account Name*</label>
                             <input type="text" name="account_name" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                                   placeholder="e.g., John's Savings Account">
+                                   class="mt-1 block w-full border <?= isset($errors['account_name']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   placeholder="e.g., John's Savings Account"
+                                   value="<?= isset($_POST['account_name']) ? htmlspecialchars($_POST['account_name']) : '' ?>">
+                            <?php if (isset($errors['account_name'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['account_name'] ?></p>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Initial Deposit (USD)*</label>
                             <input type="number" name="initial_deposit" min="0" step="0.01" required 
-                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2">
+                                   class="mt-1 block w-full border <?= isset($errors['initial_deposit']) ? 'border-red-500' : 'border-gray-300' ?> rounded-md px-3 py-2"
+                                   value="<?= isset($_POST['initial_deposit']) ? htmlspecialchars($_POST['initial_deposit']) : '' ?>">
+                            <?php if (isset($errors['initial_deposit'])): ?>
+                                <p class="mt-1 text-sm text-red-600"><?= $errors['initial_deposit'] ?></p>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -352,8 +533,8 @@ include 'header.php';
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Proof</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bank</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
@@ -373,10 +554,10 @@ include 'header.php';
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= htmlspecialchars($customer['email']) ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= htmlspecialchars($customer['phone']) ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= htmlspecialchars($customer['bank_name']) ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?= htmlspecialchars($customer['id_proof_type'] ?? 'N/A') ?>: <?= htmlspecialchars($customer['id_proof_number']) ?>
+                                        <?= htmlspecialchars($customer['employees_first_name'] ?? 'Unknown') . ' ' . htmlspecialchars($customer['employees_last_name'] ?? '') ?>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= htmlspecialchars($customer['created_at']) ?></td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <a href="customer_details?id=<?= $customer['customer_id'] ?>" 
                                            class="text-blue-600 hover:text-blue-900 mr-2">View Accounts</a>

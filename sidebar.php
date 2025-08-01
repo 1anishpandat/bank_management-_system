@@ -11,6 +11,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
 $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : null;
 
 // Define strict role permissions - FIXED PERMISSION KEYS
+// Define strict role permissions - FIXED PERMISSION KEYS
 $role_permissions = [
     'teller' => [
         'dashboard' => true,
@@ -27,14 +28,15 @@ $role_permissions = [
     ],
     'credit_card' => [
         'dashboard' => true,
-        'credit_card_management' => true  // ✅ Fixed: matches the permission check
+        'credit_card_management' => true
     ],
     'loan' => [
         'dashboard' => true,
-        'loan_management' => true  // ✅ Fixed: matches the permission check
+        'loan_management' => true
     ],
     'manager' => [
-        'all' => true
+        'all' => true,
+        'employee_attendance' => true  // Specific permission for employee attendance
     ]
 ];
 
@@ -48,6 +50,7 @@ $role_permissions = [
 //       </div>";
 
 // Function to check permissions
+if (!function_exists('has_permission')) {
 function has_permission($role, $permission) {
     global $role_permissions;
     
@@ -66,9 +69,10 @@ function has_permission($role, $permission) {
     
     return false;
 }
-
+}
 // Only show sidebar if logged in and has a valid role
 if ($is_logged_in && $user_role): 
+   
 ?>
 <style>
 /* Enhanced sidebar and main content adjustment styles */
@@ -292,6 +296,15 @@ if ($is_logged_in && $user_role):
             </a>
         </li>
     </ul>
+    <!-- Employee Attendance - Only for manager -->
+<?php if (has_permission($user_role, 'employee_attendance')): ?>
+<li class="<?php echo ($current_page == 'employee_attendance.php') ? 'active' : ''; ?>">
+    <a href="employee_attendance">
+        <i class="fas fa-user-clock"></i> <!-- Using a clock with user icon for attendance -->
+        <span>Employee Attendance</span>
+    </a>
+</li>
+<?php endif; ?>
 </div>
 
 <script>

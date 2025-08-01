@@ -8,6 +8,7 @@ error_reporting(E_ALL);       // Report all errors
 // Include database connection. This file should define $conn (a mysqli object).
 require_once 'db_connect.php';
 
+
 // Start session and check authentication
 session_start();
 
@@ -798,8 +799,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $bank_employees = $attendance->getBankEmployees();
 
 // Include HTML header and sidebar
-include 'header.php';
-include 'sidebar.php';
+// include 'header.php';
+// include 'sidebar.php';
 
 ?>
 <!DOCTYPE html>
@@ -1222,10 +1223,10 @@ include 'sidebar.php';
     </style>
 </head>
 <body>
-<?php include 'sidebar.php'; ?>
+<?php include 'header.php'; ?>
     
     <div class="container">
-        <h1>Employee Attendance and Salary System</h1>
+    <h1 style="text-align: center; font-weight: bold; margin: 20px 0;">Employee Attendance and Salary System</h1>
         
         <?php if (!empty($message)): ?>
             <div class="message <?php echo strpos($message, 'Error') !== false || strpos($message, 'Failed') !== false ? 'error-message' : 'success'; ?>">
