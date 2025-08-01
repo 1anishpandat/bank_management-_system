@@ -304,6 +304,71 @@ try {
     $error_message = "Error fetching customers: " . $e->getMessage();
 }
 
+// Handle delete action
+if ($_SERVER['REQUEST_METHOD'] == 'GET' && isset($_GET['action'])) {
+    if ($_GET['action'] == 'delete' && isset($_GET['id'])) {
+        // Only allow managers/admins to delete
+        if ($employee_role == 'manager' || $employee_role == 'admin') {
+            $customer_id = intval($_GET['id']);
+            
+            try {
+                // Start transaction
+                $conn->begin_transaction();
+                
+                // First, get all account IDs for this customer
+                $stmt_get_accounts = $conn->prepare("SELECT account_id FROM accounts WHERE user_id = ?");
+                $stmt_get_accounts->bind_param("i", $customer_id);
+                $stmt_get_accounts->execute();
+                $result = $stmt_get_accounts->get_result();
+                $account_ids = [];
+                while ($row = $result->fetch_assoc()) {
+                    $account_ids[] = $row['account_id'];
+                }
+                $stmt_get_accounts->close();
+                
+                if (!empty($account_ids)) {
+                    // Delete transactions for these accounts
+                    $placeholders = implode(',', array_fill(0, count($account_ids), '?'));
+                    $stmt_del_trans = $conn->prepare("DELETE FROM transactions WHERE account_id IN ($placeholders)");
+                    $stmt_del_trans->bind_param(str_repeat('i', count($account_ids)), ...$account_ids);
+                    $stmt_del_trans->execute();
+                    $stmt_del_trans->close();
+                    
+                    // Delete the accounts
+                    $stmt_del_accounts = $conn->prepare("DELETE FROM accounts WHERE user_id = ?");
+                    $stmt_del_accounts->bind_param("i", $customer_id);
+                    $stmt_del_accounts->execute();
+                    $stmt_del_accounts->close();
+                }
+                
+                // Finally, delete the customer
+                $stmt_del_customer = $conn->prepare("DELETE FROM customers WHERE customer_id = ?");
+                $stmt_del_customer->bind_param("i", $customer_id);
+                $stmt_del_customer->execute();
+                
+                if ($stmt_del_customer->affected_rows > 0) {
+                    $conn->commit();
+                    $success_message = "Customer and all associated accounts deleted successfully.";
+                } else {
+                    $conn->rollback();
+                    $error_message = "Customer not found or already deleted.";
+                }
+                $stmt_del_customer->close();
+                
+                // Refresh the page to show updated list
+                header("Location: customer_management");
+                exit();
+                
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error_message = "Error deleting customer: " . $e->getMessage();
+            }
+        } else {
+            $error_message = "You don't have permission to delete customers.";
+        }
+    }
+}
+
 include 'header.php';
 ?>
 
@@ -559,16 +624,16 @@ include 'header.php';
                                         <?= htmlspecialchars($customer['employees_first_name'] ?? 'Unknown') . ' ' . htmlspecialchars($customer['employees_last_name'] ?? '') ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <a href="customer_details?id=<?= $customer['customer_id'] ?>" 
-                                           class="text-blue-600 hover:text-blue-900 mr-2">View Accounts</a>
-                                        <?php if ($employee_role == 'manager' || $employee_role == 'admin'): ?>
-                                            <a href="?action=edit&id=<?= $customer['customer_id'] ?>" 
-                                               class="text-green-600 hover:text-green-900 mr-2">Edit</a>
-                                            <a href="?action=delete&id=<?= $customer['customer_id'] ?>" 
-                                               class="text-red-600 hover:text-red-900" 
-                                               onclick="return confirm('Are you sure you want to delete this customer and all associated accounts?')">Delete</a>
-                                        <?php endif; ?>
-                                    </td>
+    <a href="customer_details?id=<?= $customer['customer_id'] ?>" 
+       class="text-blue-600 hover:text-blue-900 mr-2">View Accounts</a>
+    <?php if ($employee_role == 'manager' || $employee_role == 'admin'): ?>
+        <a href="edit_customer?id=<?= $customer['customer_id'] ?>" 
+           class="text-green-600 hover:text-green-900 mr-2">Edit</a>
+        <a href="?action=delete&id=<?= $customer['customer_id'] ?>" 
+           class="text-red-600 hover:text-red-900" 
+           onclick="return confirm('Are you sure you want to delete this customer and all associated accounts?')">Delete</a>
+    <?php endif; ?>
+</td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

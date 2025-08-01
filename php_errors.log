@@ -1,0 +1,92 @@
+[01-Aug-2025 13:18:59 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:684
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 684
+[01-Aug-2025 13:23:48 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 26
+[01-Aug-2025 13:23:53 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 26
+[01-Aug-2025 13:23:53 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:694
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 694
+[01-Aug-2025 13:25:42 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 26
+[01-Aug-2025 13:25:49 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 26
+[01-Aug-2025 13:25:49 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:694
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 694
+[01-Aug-2025 13:26:05 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 26
+[01-Aug-2025 13:28:04 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:28:09 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:28:09 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:28:13 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:28:20 Europe/Berlin] PHP Warning:  Undefined variable $conn in C:\xampp\htdocs\bms2\employee_attendance.php on line 25
+[01-Aug-2025 13:28:20 Europe/Berlin] Database connection failed: Unknown error
+[01-Aug-2025 13:28:22 Europe/Berlin] PHP Warning:  Undefined variable $conn in C:\xampp\htdocs\bms2\employee_attendance.php on line 25
+[01-Aug-2025 13:28:22 Europe/Berlin] Database connection failed: Unknown error
+[01-Aug-2025 13:28:25 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:28:48 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:31:08 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:34:26 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:34:30 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:34:30 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:35:44 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:35:44 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:35:48 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:35:52 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:35:52 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:35:57 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:38:02 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:38:08 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:38:08 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:43:35 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 40
+[01-Aug-2025 13:43:58 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:45:53 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 31
+[01-Aug-2025 13:45:53 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to undefined method EmployeeAttendance::getBankEmployees() in C:\xampp\htdocs\bms2\employee_attendance.php:245
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 245
+[01-Aug-2025 13:45:56 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 31
+[01-Aug-2025 13:45:56 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to undefined method EmployeeAttendance::getBankEmployees() in C:\xampp\htdocs\bms2\employee_attendance.php:245
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 245
+[01-Aug-2025 13:46:02 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:46:18 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:47:33 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:47:37 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:47:37 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:700
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 700
+[01-Aug-2025 13:50:28 Europe/Berlin] PHP Notice:  session_start(): Ignoring session_start() because a session is already active in C:\xampp\htdocs\bms2\employee_attendance.php on line 32
+[01-Aug-2025 13:58:11 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:601
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 601
+[01-Aug-2025 14:01:04 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:601
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 601
+[01-Aug-2025 14:03:59 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:601
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 601
+[01-Aug-2025 14:04:06 Europe/Berlin] PHP Fatal error:  Uncaught Error: Call to private method EmployeeAttendance::verifyEmployeeBank() from global scope in C:\xampp\htdocs\bms2\employee_attendance.php:601
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\bms2\employee_attendance.php on line 601

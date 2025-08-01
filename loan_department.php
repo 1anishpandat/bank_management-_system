@@ -514,7 +514,7 @@ $customers = getCustomers($bank_id);
                                                 <span class="badge bg-success status-badge">Active</span>
                                             </td>
                                             <td>
-                                                <a href="loan_details.php?id=<?= $loan['loan_id'] ?>" class="btn btn-sm btn-primary">
+                                                <a href="loan_details?id=<?= $loan['loan_id'] ?>" class="btn btn-sm btn-primary">
                                                     <i class="bi bi-eye"></i> Details
                                                 </a>
                                             </td>
@@ -562,7 +562,7 @@ $customers = getCustomers($bank_id);
                                             <td><?= date('M d, Y', strtotime($app['rejected_date'])) ?></td>
                                             <td><?= $app['rejection_reason'] ?></td>
                                             <td>
-                                                <a href="loan_application.php?id=<?= $app['application_id'] ?>" class="btn btn-sm btn-primary">
+                                                <a href="loan_application?id=<?= $app['application_id'] ?>" class="btn btn-sm btn-primary">
                                                     <i class="bi bi-eye"></i> View
                                                 </a>
                                             </td>
@@ -610,7 +610,7 @@ $customers = getCustomers($bank_id);
                                                 <?= $loan['last_payment_date'] ? date('M d, Y', strtotime($loan['last_payment_date'])) : 'Never' ?>
                                             </td>
                                             <td>
-                                                <a href="loan_details.php?id=<?= $loan['loan_id'] ?>" class="btn btn-sm btn-primary">
+                                                <a href="loan_details?id=<?= $loan['loan_id'] ?>" class="btn btn-sm btn-primary">
                                                     <i class="bi bi-eye"></i> Details
                                                 </a>
                                                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#contactModal<?= $loan['loan_id'] ?>">

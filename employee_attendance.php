@@ -1,18 +1,26 @@
 <?php
+// Add this right at the start
+ob_start();
 
-// Ensure error reporting is configured appropriately for development/production
-ini_set('display_errors', 0); // Disable display of errors in production
-ini_set('log_errors', 1);     // Enable logging of errors
-error_reporting(E_ALL);       // Report all errors
+// Error reporting configuration
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/php_errors.log');
 
-// Include database connection. This file should define $conn (a mysqli object).
-require_once 'db_connect.php';
-
-
-// Start session and check authentication
+// Start session
 session_start();
 
-// Authorization check: Redirect if not authenticated
+// Include database connection
+require_once 'db_connect.php';
+
+// Validate database connection
+if (!$conn || $conn->connect_error) {
+    error_log("Database connection failed: " . ($conn->connect_error ?? 'Unknown error'));
+    die("Database connection error. Please try again later.");
+}
+
+// Authorization check
 if (!isset($_SESSION['employee_id'])) {
     header("Location: employee_login.php");
     exit();
@@ -24,7 +32,7 @@ $employee = null;
 $bank = null;
 $current_bank_id = null;
 
-// Use prepared statements for fetching user details to prevent SQL injection
+// Fetch employee details
 if ($stmt = $conn->prepare("SELECT * FROM employee WHERE employee_id = ?")) {
     $stmt->bind_param("i", $current_employee_id);
     $stmt->execute();
@@ -75,22 +83,12 @@ class EmployeeAttendance {
     private $conn;
     private $current_bank_id;
 
-    /**
-     * Constructor
-     * @param mysqli $conn The database connection object.
-     * @param int $current_bank_id The bank ID of the logged-in employee
-     */
     public function __construct(mysqli $conn, int $current_bank_id) {
         $this->conn = $conn;
         $this->current_bank_id = $current_bank_id;
     }
 
-    /**
-     * Verify if an employee belongs to the same bank as the logged-in user
-     * @param int $employee_id
-     * @return bool
-     */
-    private function verifyEmployeeBank(int $employee_id): bool {
+    public function verifyEmployeeBank(int $employee_id): bool {  // Changed from private to public
         try {
             $query = "SELECT bank_id FROM employee WHERE employee_id = ?";
             $stmt = $this->conn->prepare($query);
@@ -114,23 +112,15 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Marks or updates employee attendance for a specific date.
-     * @param int $employee_id
-     * @param string $date Date in YYYY-MM-DD format.
-     * @param string|null $check_in Time in HH:MM:SS format (or null).
-     * @param string|null $check_out Time in HH:MM:SS format (or null).
-     * @param string $status Attendance status (e.g., 'present', 'absent', 'half_day', 'leave', 'holiday').
-     * @param string $notes Additional notes.
-     * @return array Result with success status and message
-     */
+
+
+
+    
     public function markAttendance(int $employee_id, string $date, ?string $check_in, ?string $check_out, string $status, string $notes = ''): array {
-        // First verify the employee belongs to the same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return ['success' => false, 'message' => "Unauthorized access to employee from another bank."];
         }
 
-        // Input validation
         $allowed_statuses = ['present', 'absent', 'half_day', 'leave', 'holiday'];
         if (!in_array($status, $allowed_statuses)) {
             return ['success' => false, 'message' => "Invalid attendance status provided."];
@@ -149,7 +139,6 @@ class EmployeeAttendance {
         }
 
         try {
-            // Check if attendance already exists
             $query = "SELECT attendance_id FROM employee_attendance WHERE employee_id = ? AND date = ?";
             $stmt = $this->conn->prepare($query);
             if (!$stmt) {
@@ -194,20 +183,11 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Retrieves attendance records for a specific employee within a date range.
-     * @param int $employee_id
-     * @param string $start_date Date in YYYY-MM-DD format.
-     * @param string $end_date Date in YYYY-MM-DD format.
-     * @return array Array of attendance records or error message
-     */
     public function getAttendance(int $employee_id, string $start_date, string $end_date): array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return ['error' => "Unauthorized access to employee data."];
         }
 
-        // Input validation
         if (!preg_match("/^\d{4}-\d{2}-\d{2}$/", $start_date) || !strtotime($start_date) ||
             !preg_match("/^\d{4}-\d{2}-\d{2}$/", $end_date) || !strtotime($end_date)) {
             return ['error' => "Invalid date range format provided."];
@@ -235,20 +215,11 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Gets an attendance summary for an employee for a specific month and year.
-     * @param int $employee_id
-     * @param int $month Month number (1-12).
-     * @param int $year Four-digit year.
-     * @return array Associative array with attendance counts or error message
-     */
     public function getAttendanceSummary(int $employee_id, int $month, int $year): array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return ['error' => "Unauthorized access to employee data."];
         }
 
-        // Input validation
         if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
             return ['error' => "Invalid month or year provided."];
         }
@@ -290,13 +261,7 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Retrieves the current salary details for a specific employee.
-     * @param int $employee_id
-     * @return array|null Associative array of salary details, or null if not found
-     */
     public function getEmployeeSalaryDetails(int $employee_id): ?array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return null;
         }
@@ -321,31 +286,17 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Adds or updates a salary structure for an employee.
-     * @param int $employee_id
-     * @param float $basic_salary
-     * @param float $hra
-     * @param float $da
-     * @param float $allowances
-     * @param float $deductions
-     * @param float $tax
-     * @return array Result with success status and message
-     */
     public function addOrUpdateSalaryStructure(int $employee_id, float $basic_salary, float $hra, float $da, float $allowances, float $deductions, float $tax): array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return ['success' => false, 'message' => "Unauthorized access to employee data."];
         }
 
-        // Input validation
         if ($basic_salary < 0 || $hra < 0 || $da < 0 || $allowances < 0 || $deductions < 0 || $tax < 0) {
             return ['success' => false, 'message' => "Salary components cannot be negative."];
         }
 
         $this->conn->begin_transaction();
         try {
-            // Deactivate previous salary structures
             $update_prev_query = "UPDATE employee_salary SET is_current = 0, updated_at = NOW() WHERE employee_id = ?";
             $stmt_prev = $this->conn->prepare($update_prev_query);
             if (!$stmt_prev) {
@@ -355,7 +306,6 @@ class EmployeeAttendance {
             $stmt_prev->execute();
             $stmt_prev->close();
 
-            // Insert new salary structure
             $insert_query = "INSERT INTO employee_salary
                              (employee_id, basic_salary, hra, da, allowances, deductions, tax, net_salary, effective_from, is_current, created_at, updated_at)
                              VALUES (?, ?, ?, ?, ?, ?, ?, 0.00, CURDATE(), 1, NOW(), NOW())";
@@ -382,26 +332,16 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Generates and records salary for an employee for a given month and year.
-     * @param int $employee_id
-     * @param int $month Month number (1-12).
-     * @param int $year Four-digit year.
-     * @return array Result with success status, message, and calculated net salary
-     */
     public function generateSalary(int $employee_id, int $month, int $year): array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return ['success' => false, 'message' => "Unauthorized access to employee data.", 'net_salary' => 0];
         }
 
-        // Input validation
         if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
             return ['success' => false, 'message' => "Invalid month or year for salary generation.", 'net_salary' => 0];
         }
 
         try {
-            // 1. Get salary details
             $salary_details = $this->getEmployeeSalaryDetails($employee_id);
             if (!$salary_details) {
                 return ['success' => false, 'message' => "Salary details not found for employee.", 'net_salary' => 0];
@@ -415,7 +355,6 @@ class EmployeeAttendance {
             $tax = (float)($salary_details['tax'] ?? 0);
             $salary_id = (int)($salary_details['salary_id'] ?? 0);
 
-            // 2. Get attendance summary
             $attendance_summary = $this->getAttendanceSummary($employee_id, $month, $year);
             if (isset($attendance_summary['error'])) {
                 return ['success' => false, 'message' => $attendance_summary['error'], 'net_salary' => 0];
@@ -426,10 +365,7 @@ class EmployeeAttendance {
             $leave_days = (int)($attendance_summary['leave_days'] ?? 0);
             $holiday_days = (int)($attendance_summary['holiday_days'] ?? 0);
 
-            // Calculate payable days (adjust according to your business rules)
             $payable_days = $present_days + ($half_days * 0.5) + $leave_days + $holiday_days;
-
-            // Calculate daily rates and gross salary
             $days_in_month = (int)cal_days_in_month(CAL_GREGORIAN, $month, $year);
             if ($days_in_month === 0) {
                 return ['success' => false, 'message' => "Invalid month/year for calculation.", 'net_salary' => 0];
@@ -445,11 +381,9 @@ class EmployeeAttendance {
                            ($payable_days * $daily_da) +
                            ($payable_days * $daily_allowances);
 
-            // Calculate net salary
             $calculated_net_salary = max(0.00, round($gross_salary - $deductions - $tax, 2));
             $payment_date = date('Y-m-d');
 
-            // Check if salary already exists for this period
             $check_query = "SELECT payment_id FROM salary_payments WHERE employee_id = ? AND month = ? AND year = ?";
             $check_stmt = $this->conn->prepare($check_query);
             if (!$check_stmt) {
@@ -515,13 +449,7 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Retrieves basic employee details by ID (only for same bank employees).
-     * @param int $employee_id
-     * @return array|null Associative array of employee details, or null if not found/unauthorized
-     */
     public function getEmployeeDetails(int $employee_id): ?array {
-        // Verify employee belongs to same bank
         if (!$this->verifyEmployeeBank($employee_id)) {
             return null;
         }
@@ -550,10 +478,6 @@ class EmployeeAttendance {
         }
     }
 
-    /**
-     * Gets list of employees in the same bank (for dropdowns/selection)
-     * @return array List of employees or error message
-     */
     public function getBankEmployees(): array {
         try {
             $query = "SELECT employee_id, employees_first_name, employees_last_name 
@@ -797,11 +721,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get list of employees in the same bank for dropdowns
 $bank_employees = $attendance->getBankEmployees();
-
-// Include HTML header and sidebar
-// include 'header.php';
-// include 'sidebar.php';
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1545,7 +1464,7 @@ $bank_employees = $attendance->getBankEmployees();
 
         <div class="section" id="attendance-report-section">
             <h2>Generate Attendance Report (CSV)</h2>
-            <form method="post">
+            <form method="post" id="attendance-report-form" target="_blank">
                 <input type="hidden" name="action" value="download_attendance_report">
                 <div class="form-group">
                     <label for="report_employee_id">Employee ID:</label>
@@ -1559,13 +1478,13 @@ $bank_employees = $attendance->getBankEmployees();
                     <label for="report_end_date">End Date:</label>
                     <input type="date" name="report_end_date" id="report_end_date" required value="<?php echo date('Y-m-d'); ?>">
                 </div>
-                <button type="submit">Download Attendance Report</button>
+                <button type="submit" id="download-attendance-btn">Download Attendance Report</button>
             </form>
         </div>
 
         <div class="section" id="salary-report-section">
             <h2>Generate Salary Report (CSV)</h2>
-            <form method="post">
+            <form method="post" id="salary-report-form" target="_blank">
                 <input type="hidden" name="action" value="download_salary_report">
                 <div class="form-group">
                     <label for="salary_report_employee_id">Employee ID:</label>
@@ -1585,7 +1504,7 @@ $bank_employees = $attendance->getBankEmployees();
                     <label for="salary_report_year">Year:</label>
                     <input type="number" name="salary_report_year" id="salary_report_year" required value="<?php echo date('Y'); ?>">
                 </div>
-                <button type="submit">Download Salary Report</button>
+                <button type="submit" id="download-salary-btn">Download Salary Report</button>
             </form>
         </div>
 
@@ -1631,176 +1550,218 @@ $bank_employees = $attendance->getBankEmployees();
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const allSections = document.querySelectorAll('.section');
-            const dropdownButtons = document.querySelectorAll('.dropdown-button');
-            const dropdownLinks = document.querySelectorAll('.dropdown-content a');
-            const messageDiv = document.querySelector('.message');
+document.addEventListener('DOMContentLoaded', function() {
+    // Cache DOM elements
+    const allSections = document.querySelectorAll('.section');
+    const dropdownButtons = document.querySelectorAll('.dropdown-button');
+    const dropdownLinks = document.querySelectorAll('.dropdown-content a');
+    const messageDiv = document.querySelector('.message');
+    const viewEmployeeDataSection = document.getElementById('view-employee-data-section');
+    const employeeDataForm = document.getElementById('employee-data-form');
+    const employeeDataResults = document.getElementById('employee-data-results');
+    const clearResultsBtn = document.getElementById('clear-results-btn');
+    const attendanceReportForm = document.getElementById('attendance-report-form');
+    const salaryReportForm = document.getElementById('salary-report-form');
+
+    // Section management functions
+    function hideAllSections() {
+        allSections.forEach(section => {
+            section.classList.remove('active');
+        });
+    }
+
+    function setActiveSection(targetElement) {
+        hideAllSections();
+        if (targetElement) {
+            targetElement.classList.add('active');
             
-            const viewEmployeeDataSection = document.getElementById('view-employee-data-section');
-            const employeeDataForm = document.getElementById('employee-data-form');
-            const employeeDataResults = document.getElementById('employee-data-results');
-            const clearResultsBtn = document.getElementById('clear-results-btn');
-
-
-            // Function to hide all sections and remove 'active' class
-            function hideAllSections() {
-                allSections.forEach(section => {
-                    section.classList.remove('active');
-                });
-            }
-
-            // Function to set an active section
-            function setActiveSection(targetElement) {
-                hideAllSections(); // Hide all others first
-                if (targetElement) {
-                    targetElement.classList.add('active'); // Add active to the target
-                }
-            }
-
-            // --- Initial page load logic ---
-            // Hide all sections on page load to ensure nothing is visible initially by default.
-            // Content will be revealed upon dropdown link click.
-            hideAllSections();
-
-            // Also, ensure the results div is hidden by default on page load/refresh
-            if (employeeDataResults) {
+            // Special handling for employee data section
+            if (targetElement.id === 'view-employee-data-section' && employeeDataResults) {
                 employeeDataResults.style.display = 'none';
-                employeeDataResults.innerHTML = ''; // Clear any potential lingering content
+                employeeDataResults.innerHTML = '';
             }
             
-            // Handle dropdown button clicks to toggle dropdown content
-            dropdownButtons.forEach(button => {
-                button.addEventListener('click', function(event) {
-                    event.stopPropagation(); // Prevent document click from closing immediately
-                    const dropdownContent = this.nextElementSibling;
-                    // Close other dropdowns
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== dropdownContent) {
-                            content.style.display = 'none';
-                        }
-                    });
-                    dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
-                });
+            // Smooth scroll to section
+            window.scrollTo({
+                top: targetElement.offsetTop - 20,
+                behavior: 'smooth'
             });
+        }
+    }
 
-            // Close dropdown if clicked outside
-            document.addEventListener('click', function(event) {
-                dropdownButtons.forEach(button => {
-                    const dropdownContent = button.nextElementSibling;
-                    if (dropdownContent && !button.contains(event.target) && !dropdownContent.contains(event.target)) {
-                        dropdownContent.style.display = 'none';
+    // Initialize page state
+    function initializePage() {
+        hideAllSections();
+        
+        // Hide employee results by default
+        if (employeeDataResults) {
+            employeeDataResults.style.display = 'none';
+            employeeDataResults.innerHTML = '';
+        }
+        
+        // Check if there's a hash in URL and activate corresponding section
+        if (window.location.hash) {
+            const targetSection = document.querySelector(window.location.hash);
+            if (targetSection) {
+                setActiveSection(targetSection);
+            }
+        }
+    }
+
+    // Dropdown functionality
+    function setupDropdowns() {
+        dropdownButtons.forEach(button => {
+            button.addEventListener('click', function(event) {
+                event.stopPropagation();
+                const dropdownContent = this.nextElementSibling;
+                
+                // Close all other dropdowns
+                document.querySelectorAll('.dropdown-content').forEach(content => {
+                    if (content !== dropdownContent) {
+                        content.style.display = 'none';
                     }
                 });
+                
+                // Toggle current dropdown
+                dropdownContent.style.display = 
+                    dropdownContent.style.display === 'block' ? 'none' : 'block';
             });
+        });
 
-            // Handle dropdown link clicks to show/hide sections
-            dropdownLinks.forEach(anchor => {
-                anchor.addEventListener('click', function (e) {
-                    e.preventDefault(); // Prevent default jump behavior
-
-                    const targetId = this.getAttribute('href'); // e.g., "#mark-attendance-section"
-                    const targetElement = document.querySelector(targetId);
-
-                    if (targetElement) {
-                        setActiveSection(targetElement); // Show the target section by adding 'active' class
-
-                        // If navigating to the employee data section, hide its results initially
-                        if (targetId === '#view-employee-data-section' && employeeDataResults) {
-                            employeeDataResults.style.display = 'none';
-                            employeeDataResults.innerHTML = ''; // Clear previous results
-                        }
-
-                        // Scroll to the target section
-                        window.scrollTo({
-                            top: targetElement.offsetTop - 20, // Adjust 20px for padding/margin
-                            behavior: 'smooth'
-                        });
-
-                        // Close the dropdown after clicking a link
-                        this.closest('.dropdown-content').style.display = 'none';
-                    }
-                });
-            });
-
-            // --- Form Submission Handler for "View Employee Data" (AJAX) ---
-            if (employeeDataForm) {
-                employeeDataForm.addEventListener('submit', function(event) {
-                    event.preventDefault(); // Prevent the default form submission (NO PAGE RELOAD!)
-
-                    // Ensure the parent section is active (it should be if user navigated via dropdown)
-                    // This is crucial: if this section was hidden, it needs to be visible to show results.
-                    viewEmployeeDataSection.classList.add('active');
-
-                    const formData = new FormData(employeeDataForm);
-                    const phpEndpoint = window.location.href; // The current PHP file will handle the POST request
-
-                    // Optional: Show a loading indicator
-                    if (employeeDataResults) {
-                        employeeDataResults.innerHTML = '<p style="text-align: center; padding: 20px;">Loading data...</p>';
-                        employeeDataResults.style.display = 'block'; // Show loading message
-                    }
-
-                    fetch(phpEndpoint, {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.text(); // Expecting HTML back from PHP
-                    })
-                    .then(html => {
-                        // PHP returns the whole page, so we need to extract the results div content
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(html, 'text/html');
-                        const fetchedResultsDiv = doc.getElementById('employee-data-results');
-
-                        if (employeeDataResults && fetchedResultsDiv) {
-                            employeeDataResults.innerHTML = fetchedResultsDiv.innerHTML; // Populate results with content from the fetched div
-                            employeeDataResults.style.display = 'block'; // Show results here!
-                        } else if (employeeDataResults) {
-                             // If no results div was found in the fetched HTML, clear and display a message
-                            employeeDataResults.innerHTML = '<p style="color: red;">No data found for the provided Employee ID, Month, and Year.</p>';
-                            employeeDataResults.style.display = 'block';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching employee data:', error);
-                        if (employeeDataResults) {
-                            employeeDataResults.innerHTML = '<p style="color: red;">Failed to load data. Please check Employee ID, Month, and Year.</p>';
-                            employeeDataResults.style.display = 'block';
-                        }
-                    });
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!event.target.matches('.dropdown-button')) {
+                document.querySelectorAll('.dropdown-content').forEach(content => {
+                    content.style.display = 'none';
                 });
             }
+        });
+    }
 
-            // Clear Results button functionality
-            if (clearResultsBtn) {
-                clearResultsBtn.addEventListener('click', function() {
-                    if (employeeDataForm) {
-                        employeeDataForm.reset();
-                    }
-                    if (employeeDataResults) {
-                        employeeDataResults.style.display = 'none'; // Hide results
-                        employeeDataResults.innerHTML = ''; // Clear content
-                    }
-                });
-            }
-
-            // Close Results button functionality (using event delegation for dynamically loaded content)
-            // Using event delegation because the button might be inside content loaded via AJAX
-            document.addEventListener('click', function(event) {
-                if (event.target.classList.contains('close-results-btn')) {
-                    if (employeeDataResults) {
-                        employeeDataResults.style.display = 'none';
-                        employeeDataResults.innerHTML = '';
-                    }
+    // Navigation link handling
+    function setupNavigationLinks() {
+        dropdownLinks.forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                
+                if (targetElement) {
+                    setActiveSection(targetElement);
+                    
+                    // Close the dropdown after selection
+                    this.closest('.dropdown-content').style.display = 'none';
+                    
+                    // Update URL hash without page jump
+                    history.pushState(null, null, targetId);
                 }
             });
         });
+    }
+
+    // Employee data form handling
+    function setupEmployeeDataForm() {
+        if (employeeDataForm) {
+            employeeDataForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                // Ensure section is visible
+                viewEmployeeDataSection.classList.add('active');
+                
+                // Show loading state
+                if (employeeDataResults) {
+                    employeeDataResults.innerHTML = '<p style="text-align: center; padding: 20px;">Loading data...</p>';
+                    employeeDataResults.style.display = 'block';
+                }
+                
+                // Prepare form data
+                const formData = new FormData(employeeDataForm);
+                
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.text();
+                })
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const fetchedResults = doc.getElementById('employee-data-results');
+                    
+                    if (employeeDataResults && fetchedResults) {
+                        employeeDataResults.innerHTML = fetchedResults.innerHTML;
+                        employeeDataResults.style.display = 'block';
+                    } else if (employeeDataResults) {
+                        employeeDataResults.innerHTML = '<p style="color: red;">No data found for the provided criteria.</p>';
+                        employeeDataResults.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    if (employeeDataResults) {
+                        employeeDataResults.innerHTML = '<p style="color: red;">Error loading data. Please try again.</p>';
+                        employeeDataResults.style.display = 'block';
+                    }
+                });
+            });
+        }
+    }
+
+    // Clear results button
+    function setupClearResultsButton() {
+        if (clearResultsBtn) {
+            clearResultsBtn.addEventListener('click', function() {
+                if (employeeDataForm) employeeDataForm.reset();
+                if (employeeDataResults) {
+                    employeeDataResults.style.display = 'none';
+                    employeeDataResults.innerHTML = '';
+                }
+            });
+        }
+    }
+
+    // Close results button (event delegation)
+    function setupCloseResultsButton() {
+        document.addEventListener('click', function(event) {
+            if (event.target.classList.contains('close-results-btn')) {
+                if (employeeDataResults) {
+                    employeeDataResults.style.display = 'none';
+                    employeeDataResults.innerHTML = '';
+                }
+            }
+        });
+    }
+
+    // Report form handling
+    function setupReportForms() {
+        // Attendance report form
+        if (attendanceReportForm) {
+            attendanceReportForm.addEventListener('submit', function(e) {
+                // Let it submit normally for file download
+                return true;
+            });
+        }
         
-    </script>
+        // Salary report form
+        if (salaryReportForm) {
+            salaryReportForm.addEventListener('submit', function(e) {
+                // Let it submit normally for file download
+                return true;
+            });
+        }
+    }
+
+    // Initialize all functionality
+    initializePage();
+    setupDropdowns();
+    setupNavigationLinks();
+    setupEmployeeDataForm();
+    setupClearResultsButton();
+    setupCloseResultsButton();
+    setupReportForms();
+});
+</script>
 </body>
 </html>

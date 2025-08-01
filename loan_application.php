@@ -230,7 +230,7 @@ for ($i = 1; $i <= $approved_term; $i++) {
             // Rollback transaction on error
             $conn->rollback();
             $_SESSION['error'] = "Error approving loan: " . $e->getMessage();
-            header("Location: loan_application.php?id=$application_id");
+            header("Location: loan_application?id=$application_id");
             exit();
         }
     }
@@ -248,7 +248,7 @@ for ($i = 1; $i <= $approved_term; $i++) {
         // Add error checking for rejection as well
         if (!$stmt) {
             $_SESSION['error'] = "Error preparing rejection query: " . $conn->error;
-            header("Location: loan_application.php?id=$application_id");
+            header("Location: loan_application?id=$application_id");
             exit();
         }
         
@@ -260,7 +260,7 @@ for ($i = 1; $i <= $approved_term; $i++) {
             exit();
         } else {
             $_SESSION['error'] = "Failed to reject application: " . $stmt->error;
-            header("Location: loan_application.php?id=$application_id");
+            header("Location: loan_application?id=$application_id");
             exit();
         }
     }
@@ -335,7 +335,7 @@ for ($i = 1; $i <= $approved_term; $i++) {
     <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="h2">Loan Application #<?= $application_id ?></h1>
-            <a href="loan_department.php" class="btn btn-outline-secondary">
+            <a href="loan_department" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Back to Loan Department
             </a>
         </div>
@@ -450,7 +450,7 @@ for ($i = 1; $i <= $approved_term; $i++) {
                                     <tbody>
                                         <?php while ($loan = $loan_history->fetch_assoc()): ?>
                                         <tr>
-                                            <td><a href="loan_details.php?id=<?= $loan['loan_id'] ?>">#<?= $loan['loan_id'] ?></a></td>
+                                            <td><a href="loan_details?id=<?= $loan['loan_id'] ?>">#<?= $loan['loan_id'] ?></a></td>
                                             <td><?= $loan['product_name'] ?></td>
                                             <td>$<?= number_format($loan['principal_amount'], 2) ?></td>
                                             <td>$<?= number_format($loan['balance'], 2) ?></td>
