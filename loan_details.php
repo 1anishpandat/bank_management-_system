@@ -2,7 +2,8 @@
 // loan_details.php
 session_start();
 require_once 'db_connect.php';
-
+// This prevents MySQL from allowing 0 as an auto-increment value
+$conn->query("SET SESSION sql_mode='NO_AUTO_VALUE_ON_ZERO'");
 // Check if employee is logged in
 if (!isset($_SESSION['employee_id']) || !isset($_SESSION['role'])) {
     header("Location: employee_login.php");
@@ -62,10 +63,21 @@ $stmt->close();
 $total_paid = 0;
 $principal_paid = 0;
 $interest_paid = 0;
-foreach ($payments as $payment) {
-    $total_paid += $payment['amount'];
-    $principal_paid += $payment['principal'];
-    $interest_paid += $payment['interest'];
+
+// Get all payments
+$stmt = $conn->prepare("SELECT SUM(amount) as total_paid, 
+                       SUM(principal) as principal_paid, 
+                       SUM(interest) as interest_paid
+                       FROM loan_payments WHERE loan_id = ?");
+$stmt->bind_param("i", $loan_id);
+$stmt->execute();
+$result = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if ($result) {
+    $total_paid = (float)$result['total_paid'];
+    $principal_paid = (float)$result['principal_paid'];
+    $interest_paid = (float)$result['interest_paid'];
 }
 
 $remaining_balance = $loan['principal_amount'] - $principal_paid;
@@ -74,12 +86,16 @@ $completion_percentage = $loan['principal_amount'] > 0 ?
 
 // Get next payment
 $next_payment = null;
-foreach ($schedule as $installment) {
-    if ($installment['status'] === 'pending') {
-        $next_payment = $installment;
-        break;
-    }
+$stmt = $conn->prepare("SELECT * FROM loan_payment_schedule 
+                       WHERE loan_id = ? AND status IN ('pending', 'partial')
+                       ORDER BY due_date LIMIT 1");
+$stmt->bind_param("i", $loan_id);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($result->num_rows > 0) {
+    $next_payment = $result->fetch_assoc();
 }
+$stmt->close();
 
 // Handle payment processing
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['process_payment'])) {
@@ -87,39 +103,139 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['process_payment'])) {
     $payment_method = $conn->real_escape_string($_POST['payment_method']);
     $reference_number = $conn->real_escape_string($_POST['reference_number'] ?? '');
     
-    // Calculate payment allocation
-    $interest = min($amount, $remaining_balance * ($loan['interest_rate'] / 100 / 12));
-    $principal = $amount - $interest;
-    $new_balance = $remaining_balance - $principal;
-    
     // Start transaction
     $conn->begin_transaction();
     
     try {
-        // Record payment
-        $stmt = $conn->prepare("INSERT INTO loan_payments 
-                              (loan_id, payment_date, amount, principal, interest, remaining_balance, payment_method, reference_number, received_by) 
-                              VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iddddssi", $loan_id, $amount, $principal, $interest, $new_balance, $payment_method, $reference_number, $_SESSION['employee_id']);
+        // Get all pending installments ordered by due date
+        $stmt = $conn->prepare("SELECT * FROM loan_payment_schedule 
+                              WHERE loan_id = ? AND status IN ('pending', 'partial') 
+                              ORDER BY due_date");
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
+        $stmt->bind_param("i", $loan_id);
         $stmt->execute();
-        $payment_id = $conn->insert_id;
+        $pending_installments = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
         
-        // Update loan account
-        $conn->query("UPDATE loan_accounts SET balance = $new_balance, last_payment_date = CURDATE(), 
-                     next_payment_date = DATE_ADD(CURDATE(), INTERVAL 1 MONTH) WHERE loan_id = $loan_id");
-        
-        // Update payment schedule
-        if ($next_payment) {
-            $conn->query("UPDATE loan_payment_schedule SET status = 'paid', paid_amount = $amount, paid_date = CURDATE() 
-                         WHERE schedule_id = {$next_payment['schedule_id']}");
+        if (empty($pending_installments)) {
+            throw new Exception("No pending installments found");
         }
         
-        // Update account balance
-        $conn->query("UPDATE accounts SET balance = balance - $amount WHERE account_id = {$loan['account_id']}");
+        $remaining_payment = $amount;
+        $total_principal_paid = 0;
+        $total_interest_paid = 0;
+        $paid_installments = [];
+        
+        // Process payment against installments
+        foreach ($pending_installments as $installment) {
+            if ($remaining_payment <= 0) break;
+            
+            $installment_id = $installment['schedule_id'];
+            $remaining_due = $installment['total_due'] - ($installment['paid_amount'] ?? 0);
+            $paid_amount = min($remaining_payment, $remaining_due);
+            
+            // Calculate how to allocate payment between principal and interest
+            $remaining_principal = $installment['principal'] - ($installment['principal'] ?? 0);
+            $remaining_interest = $installment['interest'] - ($installment['interest'] ?? 0);
+            
+            $principal = min($paid_amount, $remaining_principal);
+            $interest = $paid_amount - $principal;
+            
+            // Update installment
+            $stmt = $conn->prepare("UPDATE loan_payment_schedule 
+                                  SET paid_amount = COALESCE(paid_amount, 0) + ?, 
+                                      principal = COALESCE(principal, 0) + ?,
+                                      interest = COALESCE(interest, 0) + ?,
+                                      status = IF(COALESCE(paid_amount, 0) + ? >= total_due, 'paid', 'partial'),
+                                      paid_date = IF(COALESCE(paid_amount, 0) + ? >= total_due, CURDATE(), paid_date)
+                                  WHERE schedule_id = ?");
+            if (!$stmt) {
+                throw new Exception("Prepare failed: " . $conn->error);
+            }
+            
+            $stmt->bind_param("dddddi", $paid_amount, $principal, $interest, $paid_amount, $paid_amount, $installment_id);
+            if (!$stmt->execute()) {
+                throw new Exception("Execute failed: " . $stmt->error);
+            }
+            $stmt->close();
+            
+            // Record payment allocation
+            $total_principal_paid += $principal;
+            $total_interest_paid += $interest;
+            $remaining_payment -= $paid_amount;
+            
+            $paid_installments[] = $installment_id;
+        }
+        
+        // Calculate new loan balance
+        $new_balance = $loan['balance'] - $total_principal_paid;
+        
+        // Record payment
+        $stmt = $conn->prepare("INSERT INTO loan_payments 
+                              (loan_id, payment_date, amount, principal, interest, remaining_balance, 
+                               payment_method, reference_number, received_by) 
+                              VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)");
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
+        
+        $stmt->bind_param("iddddssi", $loan_id, $amount, $total_principal_paid, $total_interest_paid, 
+                         $new_balance, $payment_method, $reference_number, $_SESSION['employee_id']);
+        if (!$stmt->execute()) {
+            throw new Exception("Execute failed: " . $stmt->error);
+        }
+        $payment_id = $conn->insert_id;
+        $stmt->close();
+        
+        // Update loan account
+        $stmt = $conn->prepare("UPDATE loan_accounts 
+                              SET balance = ?, 
+                                  last_payment_date = CURDATE(),
+                                  next_payment_date = (
+                                      SELECT MIN(due_date) 
+                                      FROM loan_payment_schedule 
+                                      WHERE loan_id = ? AND status IN ('pending', 'partial')
+                                  ),
+                                  days_delinquent = 0
+                              WHERE loan_id = ?");
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
+        
+        $stmt->bind_param("ddi", $new_balance, $loan_id, $loan_id);
+        if (!$stmt->execute()) {
+            throw new Exception("Execute failed: " . $stmt->error);
+        }
+        $stmt->close();
+        
+        // Update account balance if payment is from account
+        if ($payment_method === 'bank_transfer' || $payment_method === 'online') {
+            $conn->query("UPDATE accounts SET balance = balance - $amount WHERE account_id = {$loan['account_id']}");
+        }
         
         // Create transaction record
-        $conn->query("INSERT INTO transactions (user_id, customer_id, account_id, category_id, transaction_type, amount, description, transaction_date, employee_id) 
-                     VALUES ({$loan['customer_id']}, {$loan['customer_id']}, {$loan['account_id']}, 4, 'EXPENSE', $amount, 'Loan Payment', CURDATE(), {$_SESSION['employee_id']})");
+        $conn->query("INSERT INTO transactions (user_id, customer_id, account_id, category_id, transaction_type, 
+                     amount, description, transaction_date, employee_id) 
+                     VALUES ({$loan['customer_id']}, {$loan['customer_id']}, {$loan['account_id']}, 4, 'EXPENSE', 
+                     $amount, 'Loan Payment #$payment_id', CURDATE(), {$_SESSION['employee_id']})");
+        
+        // Check if loan is fully paid (using a small epsilon for floating point comparison)
+        if ($new_balance < 0.01) {  // Consider paid if balance is less than 1 cent
+            if (!$conn->query("UPDATE loan_accounts SET status = 'closed', balance = 0 WHERE loan_id = $loan_id")) {
+                throw new Exception("Failed to close loan account: " . $conn->error);
+            }
+            
+            if (!$conn->query("UPDATE loan_payment_schedule SET status = 'paid' WHERE loan_id = $loan_id AND status != 'paid'")) {
+                throw new Exception("Failed to update payment schedule: " . $conn->error);
+            }
+            
+            // Log the loan closure
+            $conn->query("INSERT INTO activities (employee_id, bank_id, activity_type, action) 
+                         VALUES ({$_SESSION['employee_id']}, {$_SESSION['bank_id']}, 'loan', 
+                         'Closed loan ID $loan_id with final payment of $amount')");
+        }
         
         // Commit transaction
         $conn->commit();
@@ -147,15 +263,73 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
         exit();
     }
     
+    // Validate status transition
+    $current_status = $loan['status'];
+    $valid_transitions = [
+        'active' => ['closed', 'defaulted', 'written_off'],
+        'defaulted' => ['closed', 'written_off'],
+        'written_off' => ['closed'],
+        'closed' => []
+    ];
+    
+    if (!in_array($new_status, $valid_transitions[$current_status])) {
+        $_SESSION['error'] = "Invalid status transition from $current_status to $new_status";
+        header("Location: loan_details.php?id=$loan_id");
+        exit();
+    }
+    
+    // Special handling for closed status
+    if ($new_status === 'closed') {
+        // Check if loan is actually paid off
+        $stmt = $conn->prepare("SELECT COUNT(*) as pending FROM loan_payment_schedule 
+                              WHERE loan_id = ? AND status IN ('pending', 'partial')");
+        if ($stmt === false) {
+            $_SESSION['error'] = "Database error: " . $conn->error;
+            header("Location: loan_details.php?id=$loan_id");
+            exit();
+        }
+        
+        $stmt->bind_param("i", $loan_id);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        
+        if ($result['pending'] > 0 && $loan['balance'] > 0) {
+            $_SESSION['error'] = "Cannot close loan with pending payments and balance";
+            header("Location: loan_details.php?id=$loan_id");
+            exit();
+        }
+    }
+    
+    // Prepare the update statement with error checking
     $stmt = $conn->prepare("UPDATE loan_accounts SET status = ?, notes = ? WHERE loan_id = ?");
+    if ($stmt === false) {
+        $_SESSION['error'] = "Database error: " . $conn->error;
+        header("Location: loan_details.php?id=$loan_id");
+        exit();
+    }
+    
     $stmt->bind_param("ssi", $new_status, $notes, $loan_id);
     
     if ($stmt->execute()) {
+        // If marking as defaulted, calculate days delinquent
+        if ($new_status === 'defaulted') {
+            $next_payment_date = $conn->query("SELECT MIN(due_date) as next_due FROM loan_payment_schedule 
+                                             WHERE loan_id = $loan_id AND status IN ('pending', 'partial')")
+                                     ->fetch_assoc()['next_due'];
+            if ($next_payment_date) {
+                $days_delinquent = max(0, (time() - strtotime($next_payment_date))) / (60 * 60 * 24);
+                $conn->query("UPDATE loan_accounts SET days_delinquent = $days_delinquent 
+                             WHERE loan_id = $loan_id");
+            }
+        }
+        
         $_SESSION['message'] = "Loan status updated to " . ucfirst($new_status);
     } else {
         $_SESSION['error'] = "Failed to update loan status: " . $stmt->error;
     }
     
+    $stmt->close();
     header("Location: loan_details.php?id=$loan_id");
     exit();
 }
@@ -375,7 +549,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
                                     </div>
                                     <div class="col-6">
                                         <p class="mb-1"><small class="text-muted">Amount Due</small></p>
-                                        <h5>$<?= number_format($next_payment['total_due'], 2) ?></h5>
+                                        <h5>$<?= number_format($next_payment['total_due'] - ($next_payment['paid_amount'] ?? 0), 2) ?></h5>
                                     </div>
                                 </div>
                                 <?php endif; ?>
@@ -473,6 +647,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
                                         <th>Principal</th>
                                         <th>Interest</th>
                                         <th>Total Due</th>
+                                        <th>Paid</th>
                                         <th>Status</th>
                                         <th>Paid Date</th>
                                     </tr>
@@ -487,6 +662,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
                                         <td>$<?= number_format($installment['principal'], 2) ?></td>
                                         <td>$<?= number_format($installment['interest'], 2) ?></td>
                                         <td>$<?= number_format($installment['total_due'], 2) ?></td>
+                                        <td>$<?= number_format($installment['paid_amount'] ?? 0, 2) ?></td>
                                         <td>
                                             <span class="badge <?= $installment['status'] === 'paid' ? 'bg-success' : 
                                                               ($installment['status'] === 'pending' ? 'bg-warning text-dark' : 
@@ -529,7 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
                         <?php if ($next_payment): ?>
                         <div class="mb-3">
                             <label class="form-label">Next Payment Due</label>
-                            <p class="form-control-static">$<?= number_format($next_payment['total_due'], 2) ?> on <?= date('M d, Y', strtotime($next_payment['due_date'])) ?></p>
+                            <p class="form-control-static">$<?= number_format($next_payment['total_due'] - ($next_payment['paid_amount'] ?? 0), 2) ?> on <?= date('M d, Y', strtotime($next_payment['due_date'])) ?></p>
                         </div>
                         <?php endif; ?>
                         <div class="mb-3">
@@ -537,7 +713,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
                             <div class="input-group">
                                 <span class="input-group-text">$</span>
                                 <input type="number" class="form-control" id="amount" name="amount" 
-                                       value="<?= $next_payment ? number_format($next_payment['total_due'], 2) : '' ?>" 
+                                       value="<?= $next_payment ? number_format($next_payment['total_due'] - ($next_payment['paid_amount'] ?? 0), 2) : '' ?>" 
                                        step="0.01" min="0.01" max="<?= $remaining_balance ?>" required>
                             </div>
                         </div>
@@ -610,7 +786,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['change_status'])) {
     <script>
         // Auto-set payment amount to next payment due amount if available
         document.getElementById('processPaymentModal').addEventListener('shown.bs.modal', function() {
-            const nextPaymentAmount = <?= $next_payment ? $next_payment['total_due'] : 0 ?>;
+            const nextPaymentAmount = <?= $next_payment ? ($next_payment['total_due'] - ($next_payment['paid_amount'] ?? 0)) : 0 ?>;
             if (nextPaymentAmount > 0) {
                 document.getElementById('amount').value = nextPaymentAmount.toFixed(2);
             }
