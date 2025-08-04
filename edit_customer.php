@@ -22,6 +22,7 @@ if ($customer_id <= 0) {
     header("Location: customer_management.php");
     exit();
 }
+
 function sanitize_input($data) {
     $data = trim($data);
     $data = stripslashes($data);
@@ -55,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $errors['first_name'] = "Only letters and white space allowed";
     }
 
-    // Sanitize other fields and store in variables
+    // Sanitize other fields
     $last_name = sanitize_input($_POST['last_name']);
     $email = sanitize_input($_POST['email']);
     $phone = sanitize_input($_POST['phone']);
@@ -63,6 +64,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $date_of_birth = sanitize_input($_POST['date_of_birth']);
     $id_proof_type = sanitize_input($_POST['id_proof_type']);
     $id_proof_number = sanitize_input($_POST['id_proof_number']);
+
+    // Handle photo upload
+    $photo_path = $customer['photo_path']; // Keep existing photo by default
+    if (isset($_FILES['photo']) && $_FILES['photo']['error'] == UPLOAD_ERR_OK) {
+        $upload_dir = 'uploads/customer_photos/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+        
+        $file_ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+        $allowed_ext = ['jpg', 'jpeg', 'png', 'gif'];
+        
+        if (in_array($file_ext, $allowed_ext)) {
+            // Delete old photo if exists
+          // Delete old photo if exists
+if (!empty($photo_path)) {
+    @unlink($photo_path);
+}
+        
+            $new_filename = 'photo_' . uniqid() . '.' . $file_ext;
+            $target_file = $upload_dir . $new_filename;
+        
+            if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_file)) {
+                $photo_path = $target_file;
+            } else {
+                $errors['photo'] = "Error uploading photo";
+            }
+        } else {
+            $errors['photo'] = "Invalid file type. Only JPG, JPEG, PNG, GIF are allowed.";
+        }
+    }
 
     if (empty($errors)) {
         try {
@@ -74,11 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 address = ?, 
                 date_of_birth = ?, 
                 id_proof_type = ?, 
-                id_proof_number = ? 
+                id_proof_number = ?,
+                photo_path = ?
                 WHERE customer_id = ?");
             
-            // Bind the variables instead of direct function calls
-            $stmt->bind_param("ssssssssi", 
+            $stmt->bind_param("sssssssssi", 
                 $first_name,
                 $last_name,
                 $email,
@@ -87,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $date_of_birth,
                 $id_proof_type,
                 $id_proof_number,
+                $photo_path,
                 $customer_id
             );
             
@@ -101,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $customer['date_of_birth'] = $date_of_birth;
                 $customer['id_proof_type'] = $id_proof_type;
                 $customer['id_proof_number'] = $id_proof_number;
+                $customer['photo_path'] = $photo_path;
             } else {
                 $error_message = "Error updating customer: " . $stmt->error;
             }
@@ -154,8 +188,36 @@ include 'header.php';
     <?php endif; ?>
 
     <div class="bg-white p-6 rounded-lg shadow mb-6">
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2 flex items-center space-x-4">
+                    <div>
+                        <?php if (!empty($customer['photo_path'])): ?>
+                            <img src="<?= htmlspecialchars($customer['photo_path']) ?>" 
+                                 alt="Customer Photo" 
+                                 class="w-24 h-24 rounded-full object-cover border-2 border-gray-300">
+                        <?php else: ?>
+                            <div class="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                                No Photo
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700">Update Photo</label>
+                        <input type="file" name="photo" accept="image/*"
+                               class="mt-1 block w-full text-sm text-gray-500
+                                      file:mr-4 file:py-2 file:px-4
+                                      file:rounded-md file:border-0
+                                      file:text-sm file:font-semibold
+                                      file:bg-blue-50 file:text-blue-700
+                                      hover:file:bg-blue-100">
+                        <?php if (isset($errors['photo'])): ?>
+                            <p class="mt-1 text-sm text-red-600"><?= $errors['photo'] ?></p>
+                        <?php endif; ?>
+                        <p class="mt-1 text-xs text-gray-500">JPG, JPEG, PNG, GIF (Max 5MB)</p>
+                    </div>
+                </div>
+                
                 <div>
                     <label class="block text-sm font-medium text-gray-700">First Name*</label>
                     <input type="text" name="first_name" required maxlength="20"

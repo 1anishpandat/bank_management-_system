@@ -1,19 +1,15 @@
 <?php
-// Remove the debug code and replace with this cleaned version
-
 session_start();
 require 'db_connect.php';
 
-// Replace existing auth check with:
 if (!isset($_SESSION['employee_id'])) {
     $_SESSION['redirect_url'] = $_SERVER['REQUEST_URI'];
     header("Location: bank_login.php");
     exit();
 }
-// Get logged-in employee's bank_id
+
 $loggedInBankId = $_SESSION['bank_id'];
 
-// CSRF token
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -21,7 +17,6 @@ if (empty($_SESSION['csrf_token'])) {
 $message = '';
 $error = '';
 
-// Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $error = "Invalid form submission";
@@ -36,7 +31,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $account_type = $_POST['account_type'];
                 $initial_deposit = $_POST['initial_deposit'];
                 
-                // Check if customer exists and belongs to the logged-in bank
                 $customer_check = $conn->prepare("SELECT customer_id FROM customers WHERE customer_id = ? AND status = 'active' AND bank_id = ?");
                 if (!$customer_check) {
                     throw new Exception("Database error: " . $conn->error);
@@ -50,7 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("Active customer not found or does not belong to your bank.");
                 }
                 
-                // Check if account type exists
                 $type_check = $conn->prepare("SELECT type_id FROM account_types WHERE type_id = ?");
                 if (!$type_check) {
                     throw new Exception("Database error: " . $conn->error);
@@ -64,10 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("Account type not found");
                 }
                 
-                // Generate account number
                 $account_number = generateAccountNumber($conn);
                 
-                // Insert account (user_id now references customer_id due to foreign key change)
                 $stmt = $conn->prepare("INSERT INTO accounts 
                     (user_id, account_type_id, account_name, account_number, balance, currency, is_active)
                     VALUES (?, ?, ?, ?, ?, 'USD', 1)");
@@ -85,7 +76,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 
                 $account_id = $conn->insert_id;
                 
-                // Record initial deposit transaction
                 $trans_stmt = $conn->prepare("INSERT INTO transactions 
                     (user_id, account_id, category_id, transaction_type, amount, description, transaction_date)
                     VALUES (?, ?, 1, 'INCOME', ?, 'Initial deposit', CURDATE())");
@@ -103,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $account_id = $_POST['account_id'];
                 $closing_notes = $_POST['closing_notes'];
                 
-                // Verify account exists, get balance, and ensure it belongs to the logged-in bank
                 $balance_check = $conn->prepare("
                     SELECT a.balance
                     FROM accounts a
@@ -128,7 +117,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("Account must have zero balance before closing.");
                 }
                 
-                // Mark account as inactive, ensuring it belongs to the logged-in bank's customer
                 $stmt = $conn->prepare("
                     UPDATE accounts a
                     JOIN customers c ON a.user_id = c.customer_id
@@ -152,12 +140,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } catch (Exception $e) {
             $conn->rollback();
             $error = "Error: " . $e->getMessage();
-            error_log("Account management error: " . $e->getMessage()); // Log error for debugging
+            error_log("Account management error: " . $e->getMessage());
         }
     }
 }
 
-// Fetch data for dropdowns and table
 // Fetch customers for the logged-in bank
 $customers = null;
 $stmt_customers = $conn->prepare("SELECT customer_id, first_name, last_name FROM customers WHERE status = 'active' AND bank_id = ? ORDER BY last_name");
@@ -169,34 +156,55 @@ if ($stmt_customers) {
     $error = "Failed to prepare customers query: " . $conn->error;
 }
 
-
 $account_types = $conn->query("SELECT type_id, type_name FROM account_types ORDER BY type_name");
 
-// Fetch active accounts for the logged-in bank
-$active_accounts = null;
-$stmt_active_accounts = $conn->prepare("
+// Fetch active asset accounts for the logged-in bank
+$active_asset_accounts = null;
+$stmt_active_asset_accounts = $conn->prepare("
     SELECT a.account_id, a.account_number, a.balance, t.type_name, c.first_name, c.last_name
     FROM accounts a
     JOIN account_types t ON a.account_type_id = t.type_id
     JOIN customers c ON a.user_id = c.customer_id
-    WHERE a.is_active = 1 AND c.bank_id = ?
+    WHERE a.is_active = 1 
+    AND c.bank_id = ?
+    AND t.category = 'ASSET'
+    AND a.account_number IS NOT NULL
     ORDER BY a.account_id DESC
 ");
-if ($stmt_active_accounts) {
-    $stmt_active_accounts->bind_param("i", $loggedInBankId);
-    $stmt_active_accounts->execute();
-    $active_accounts = $stmt_active_accounts->get_result();
+if ($stmt_active_asset_accounts) {
+    $stmt_active_asset_accounts->bind_param("i", $loggedInBankId);
+    $stmt_active_asset_accounts->execute();
+    $active_asset_accounts = $stmt_active_asset_accounts->get_result();
 } else {
-    $error = "Failed to prepare active accounts query: " . $conn->error;
+    $error = "Failed to prepare active asset accounts query: " . $conn->error;
 }
 
+// Fetch active liability accounts (loans and credit cards) for the logged-in bank
+$active_liability_accounts = null;
+$stmt_active_liability_accounts = $conn->prepare("
+    SELECT a.account_id, a.account_number, a.balance, t.type_name, c.first_name, c.last_name,
+           t.category, a.credit_limit, a.interest_rate
+    FROM accounts a
+    JOIN account_types t ON a.account_type_id = t.type_id
+    JOIN customers c ON a.user_id = c.customer_id
+    WHERE a.is_active = 1 
+    AND c.bank_id = ?
+    AND t.category IN ('LIABILITY', 'EQUITY')
+    ORDER BY a.account_id DESC
+");
+if ($stmt_active_liability_accounts) {
+    $stmt_active_liability_accounts->bind_param("i", $loggedInBankId);
+    $stmt_active_liability_accounts->execute();
+    $active_liability_accounts = $stmt_active_liability_accounts->get_result();
+} else {
+    $error = "Failed to prepare active liability accounts query: " . $conn->error;
+}
 
 function generateAccountNumber($conn) {
     $prefix = date('Y');
     $random = mt_rand(100000, 999999);
     $account_number = $prefix . $random;
     
-    // Verify uniqueness
     $check = $conn->prepare("SELECT COUNT(*) FROM accounts WHERE account_number = ?");
     if (!$check) {
         throw new Exception("Database error: " . $conn->error);
@@ -214,15 +222,12 @@ function generateAccountNumber($conn) {
     return $account_number;
 }
 
-// Check for query errors for account types (customers and active_accounts are handled by prepared statement checks)
 if (!$account_types) {
     $error = "Failed to fetch account types: " . $conn->error;
 }
 
-
 include 'header.php';
 ?>
-
 
 <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-6">Account Management</h1>
@@ -240,7 +245,6 @@ include 'header.php';
     <?php endif; ?>
     
     <div class="bg-white p-6 rounded shadow mb-8">
-   
         <h2 class="text-xl font-semibold mb-4">Open New Account</h2>
         <form method="POST">
             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
@@ -253,7 +257,7 @@ include 'header.php';
                         <option value="">Select Customer</option>
                         <?php 
                         if ($customers && $customers->num_rows > 0) {
-                            $customers->data_seek(0); // Reset pointer
+                            $customers->data_seek(0);
                             while ($customer = $customers->fetch_assoc()): ?>
                                 <option value="<?= $customer['customer_id'] ?>">
                                     <?= htmlspecialchars($customer['last_name'] . ', ' . $customer['first_name']) ?>
@@ -268,7 +272,7 @@ include 'header.php';
                         <option value="">Select Account Type</option>
                         <?php 
                         if ($account_types && $account_types->num_rows > 0) {
-                            $account_types->data_seek(0); // Reset pointer
+                            $account_types->data_seek(0);
                             while ($type = $account_types->fetch_assoc()): ?>
                                 <option value="<?= $type['type_id'] ?>">
                                     <?= htmlspecialchars($type['type_name']) ?>
@@ -291,8 +295,8 @@ include 'header.php';
         </form>
     </div>
     
-    <div class="bg-white p-6 rounded shadow">
-        <h2 class="text-xl font-semibold mb-4">Active Accounts</h2>
+    <div class="bg-white p-6 rounded shadow mb-8">
+        <h2 class="text-xl font-semibold mb-4">Deposit Accounts (Checking, Savings, etc.)</h2>
         
         <div class="overflow-x-auto">
             <table class="min-w-full bg-white">
@@ -307,8 +311,8 @@ include 'header.php';
                 </thead>
                 <tbody>
                     <?php 
-                    if ($active_accounts && $active_accounts->num_rows > 0) {
-                        while ($account = $active_accounts->fetch_assoc()): ?>
+                    if ($active_asset_accounts && $active_asset_accounts->num_rows > 0) {
+                        while ($account = $active_asset_accounts->fetch_assoc()): ?>
                         <tr>
                             <td class="py-2 px-4 border"><?= htmlspecialchars($account['account_number']) ?></td>
                             <td class="py-2 px-4 border"><?= htmlspecialchars($account['last_name'] . ', ' . $account['first_name']) ?></td>
@@ -324,7 +328,68 @@ include 'header.php';
                         <?php endwhile;
                     } else { ?>
                         <tr>
-                            <td colspan="5" class="py-4 px-4 border text-center text-gray-500">No active accounts found</td>
+                            <td colspan="5" class="py-4 px-4 border text-center text-gray-500">No active deposit accounts found</td>
+                        </tr>
+                    <?php } ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="bg-white p-6 rounded shadow">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold">Loan & Credit Accounts</h2>
+            <button id="toggleLiabilityAccounts" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded">
+                Show Accounts
+            </button>
+        </div>
+        
+        <div id="liabilityAccountsSection" class="hidden overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead>
+                    <tr>
+                        <th class="py-2 px-4 border">Account #</th>
+                        <th class="py-2 px-4 border">Customer</th>
+                        <th class="py-2 px-4 border">Type</th>
+                        <th class="py-2 px-4 border">Balance</th>
+                        <th class="py-2 px-4 border">Credit Limit</th>
+                        <th class="py-2 px-4 border">Interest Rate</th>
+                        <th class="py-2 px-4 border">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php 
+                    if ($active_liability_accounts && $active_liability_accounts->num_rows > 0) {
+                        while ($account = $active_liability_accounts->fetch_assoc()): 
+                            // Format balance display based on account type
+                            $balance_display = ($account['category'] == 'LIABILITY') 
+                                ? '-$' . number_format(abs($account['balance']), 2)
+                                : '$' . number_format($account['balance'], 2);
+                        ?>
+                        <tr>
+                            <td class="py-2 px-4 border">
+                                <?= $account['account_number'] ? htmlspecialchars($account['account_number']) : 'N/A' ?>
+                            </td>
+                            <td class="py-2 px-4 border"><?= htmlspecialchars($account['last_name'] . ', ' . $account['first_name']) ?></td>
+                            <td class="py-2 px-4 border"><?= htmlspecialchars($account['type_name']) ?></td>
+                            <td class="py-2 px-4 border"><?= $balance_display ?></td>
+                            <td class="py-2 px-4 border">
+                                <?= $account['credit_limit'] ? '$' . number_format($account['credit_limit'], 2) : 'N/A' ?>
+                            </td>
+                            <td class="py-2 px-4 border">
+                                <?= $account['interest_rate'] ? number_format($account['interest_rate'], 2) . '%' : 'N/A' ?>
+                            </td>
+                            <td class="py-2 px-4 border">
+                                <a href="account_details?id=<?= $account['account_id'] ?>" class="text-blue-500 hover:text-blue-700">View</a>
+                                <?php if (isset($_SESSION['role']) && ($_SESSION['role'] == 'manager' || $_SESSION['role'] == 'admin')): ?>
+                                    <a href="#" onclick="showCloseModal(<?= $account['account_id'] ?>)" class="text-red-500 hover:text-red-700 ml-2">Close</a>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endwhile;
+                    } else { ?>
+                        <tr>
+                            <td colspan="7" class="py-4 px-4 border text-center text-gray-500">No active loan or credit accounts found</td>
                         </tr>
                     <?php } ?>
                 </tbody>
@@ -363,6 +428,19 @@ function showCloseModal(accountId) {
     document.getElementById('close_account_id').value = accountId;
     document.getElementById('closeModal').classList.remove('hidden');
 }
+
+document.getElementById('toggleLiabilityAccounts').addEventListener('click', function() {
+    const section = document.getElementById('liabilityAccountsSection');
+    const button = document.getElementById('toggleLiabilityAccounts');
+    
+    if (section.classList.contains('hidden')) {
+        section.classList.remove('hidden');
+        button.textContent = 'Hide Accounts';
+    } else {
+        section.classList.add('hidden');
+        button.textContent = 'Show Accounts';
+    }
+});
 </script>
 
 <?php include 'footer.php'; ?>

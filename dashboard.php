@@ -49,12 +49,15 @@ try {
     $result->execute();
     $stats['total_customers'] = $result->get_result()->fetch_row()[0] ?? 0;
 
-    // Active accounts for this bank's customers
+    // Active DEPOSIT accounts for this bank's customers (excluding loans/credit)
     $result = $conn->prepare("
         SELECT COUNT(*) 
         FROM accounts a
         JOIN customers c ON a.user_id = c.customer_id
-        WHERE a.is_active = 1 AND c.bank_id = ?
+        JOIN account_types at ON a.account_type_id = at.type_id
+        WHERE a.is_active = 1 
+          AND c.bank_id = ?
+          AND at.category = 'ASSET'  -- Only show deposit accounts (Savings, Checking, etc.)
     ");
     $result->bind_param("i", $loggedInBankId);
     $result->execute();
@@ -71,12 +74,15 @@ try {
     $result->execute();
     $stats['today_transactions'] = $result->get_result()->fetch_row()[0] ?? 0;
 
-    // Total balance for this bank's accounts
+    // Total balance for this bank's DEPOSIT accounts (excluding loans/credit)
     $result = $conn->prepare("
         SELECT SUM(a.balance) 
         FROM accounts a
         JOIN customers c ON a.user_id = c.customer_id
-        WHERE a.is_active = 1 AND c.bank_id = ?
+        JOIN account_types at ON a.account_type_id = at.type_id
+        WHERE a.is_active = 1 
+          AND c.bank_id = ?
+          AND at.category = 'ASSET'  -- Only show deposit accounts (Savings, Checking, etc.)
     ");
     $result->bind_param("i", $loggedInBankId);
     $result->execute();
@@ -111,7 +117,6 @@ if ($employee_role === 'manager' || $employee_role === 'admin') {
 }
 
 include 'header.php';
-
 ?>
 
 <!DOCTYPE html>
@@ -173,7 +178,7 @@ include 'header.php';
         <div class="stat-card-2 text-white p-6 rounded-lg shadow-lg card-hover transition-all duration-300">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-white text-sm font-medium opacity-90">Active Accounts</h3>
+                    <h3 class="text-white text-sm font-medium opacity-90">Deposit Accounts</h3>
                     <p class="text-3xl font-bold"><?= number_format($stats['active_accounts']) ?></p>
                 </div>
                 <div class="bg-white bg-opacity-20 p-3 rounded-full">
