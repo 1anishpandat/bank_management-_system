@@ -93,25 +93,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $account_id = $_POST['account_id'];
                 $closing_notes = $_POST['closing_notes'];
                 
-                $balance_check = $conn->prepare("
-                    SELECT a.balance
+                // Get customer_id for the transaction record
+                $customer_check = $conn->prepare("
+                    SELECT a.user_id, a.balance
                     FROM accounts a
                     JOIN customers c ON a.user_id = c.customer_id
                     WHERE a.account_id = ? AND c.bank_id = ?
                 ");
-                if (!$balance_check) {
+                if (!$customer_check) {
                     throw new Exception("Database error: " . $conn->error);
                 }
                 
-                $balance_check->bind_param("ii", $account_id, $loggedInBankId);
-                $balance_check->execute();
-                $balance_result = $balance_check->get_result();
+                $customer_check->bind_param("ii", $account_id, $loggedInBankId);
+                $customer_check->execute();
+                $customer_result = $customer_check->get_result();
                 
-                if ($balance_result->num_rows == 0) {
+                if ($customer_result->num_rows == 0) {
                     throw new Exception("Account not found or does not belong to your bank.");
                 }
                 
-                $balance = $balance_result->fetch_assoc()['balance'];
+                $row = $customer_result->fetch_assoc();
+                $customer_id = $row['user_id'];
+                $balance = $row['balance'];
                 
                 if ($balance != 0) {
                     throw new Exception("Account must have zero balance before closing.");
@@ -133,7 +136,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("Failed to close account: " . $stmt->error);
                 }
                 
-                $message = "Account closed successfully.";
+                // Record the closing transaction
+                $trans_stmt = $conn->prepare("INSERT INTO transactions 
+                    (user_id, account_id, category_id, transaction_type, amount, description, transaction_date)
+                    VALUES (?, ?, 4, 'EXPENSE', 0, ?, CURDATE())");
+                
+                if ($trans_stmt) {
+                    $description = "Account closed: " . $closing_notes;
+                    $trans_stmt->bind_param("iis", $customer_id, $account_id, $description);
+                    if (!$trans_stmt->execute()) {
+                        error_log("Failed to record account closing transaction: " . $trans_stmt->error);
+                    }
+                }
+                
+                $message = "Account #" . $account_id . " closed successfully.";
+                
+                // Return success message without redirecting to maintain the filtered view
+                $_SESSION['success_message'] = $message;
+                $conn->commit();
+                header("Location: account_management");
+                exit();
             }
             
             $conn->commit();
@@ -143,6 +165,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             error_log("Account management error: " . $e->getMessage());
         }
     }
+}
+
+// Check for success message in session
+if (isset($_SESSION['success_message'])) {
+    $message = $_SESSION['success_message'];
+    unset($_SESSION['success_message']);
 }
 
 // Fetch customers for the logged-in bank
@@ -306,6 +334,7 @@ include 'header.php';
                         <th class="py-2 px-4 border">Customer</th>
                         <th class="py-2 px-4 border">Type</th>
                         <th class="py-2 px-4 border">Balance</th>
+                        <th class="py-2 px-4 border">Status</th>
                         <th class="py-2 px-4 border">Actions</th>
                     </tr>
                 </thead>
@@ -319,6 +348,9 @@ include 'header.php';
                             <td class="py-2 px-4 border"><?= htmlspecialchars($account['type_name']) ?></td>
                             <td class="py-2 px-4 border">$<?= number_format($account['balance'], 2) ?></td>
                             <td class="py-2 px-4 border">
+                                <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Active</span>
+                            </td>
+                            <td class="py-2 px-4 border">
                                 <a href="account_details?id=<?= $account['account_id'] ?>" class="text-blue-500 hover:text-blue-700">View</a>
                                 <?php if (isset($_SESSION['role']) && ($_SESSION['role'] == 'manager' || $_SESSION['role'] == 'admin')): ?>
                                     <a href="#" onclick="showCloseModal(<?= $account['account_id'] ?>)" class="text-red-500 hover:text-red-700 ml-2">Close</a>
@@ -328,7 +360,7 @@ include 'header.php';
                         <?php endwhile;
                     } else { ?>
                         <tr>
-                            <td colspan="5" class="py-4 px-4 border text-center text-gray-500">No active deposit accounts found</td>
+                            <td colspan="6" class="py-4 px-4 border text-center text-gray-500">No active deposit accounts found</td>
                         </tr>
                     <?php } ?>
                 </tbody>
@@ -354,6 +386,7 @@ include 'header.php';
                         <th class="py-2 px-4 border">Balance</th>
                         <th class="py-2 px-4 border">Credit Limit</th>
                         <th class="py-2 px-4 border">Interest Rate</th>
+                        <th class="py-2 px-4 border">Status</th>
                         <th class="py-2 px-4 border">Actions</th>
                     </tr>
                 </thead>
@@ -380,6 +413,9 @@ include 'header.php';
                                 <?= $account['interest_rate'] ? number_format($account['interest_rate'], 2) . '%' : 'N/A' ?>
                             </td>
                             <td class="py-2 px-4 border">
+                                <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Active</span>
+                            </td>
+                            <td class="py-2 px-4 border">
                                 <a href="account_details?id=<?= $account['account_id'] ?>" class="text-blue-500 hover:text-blue-700">View</a>
                                 <?php if (isset($_SESSION['role']) && ($_SESSION['role'] == 'manager' || $_SESSION['role'] == 'admin')): ?>
                                     <a href="#" onclick="showCloseModal(<?= $account['account_id'] ?>)" class="text-red-500 hover:text-red-700 ml-2">Close</a>
@@ -389,7 +425,7 @@ include 'header.php';
                         <?php endwhile;
                     } else { ?>
                         <tr>
-                            <td colspan="7" class="py-4 px-4 border text-center text-gray-500">No active loan or credit accounts found</td>
+                            <td colspan="8" class="py-4 px-4 border text-center text-gray-500">No active loan or credit accounts found</td>
                         </tr>
                     <?php } ?>
                 </tbody>
@@ -398,24 +434,25 @@ include 'header.php';
     </div>
 </div>
 
-<div id="closeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4">
-    <div class="bg-white rounded-lg p-6 w-full max-w-md">
+<!-- Close Account Modal -->
+<div id="closeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
         <h2 class="text-xl font-semibold mb-4">Close Account</h2>
-        <form id="closeForm" method="POST">
+        <form id="closeForm" method="POST" action="account_management">
             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
             <input type="hidden" name="action" value="close_account">
             <input type="hidden" name="account_id" id="close_account_id">
             
             <div class="mb-4">
                 <label class="block text-gray-700 mb-2">Closing Notes</label>
-                <textarea name="closing_notes" required class="w-full px-3 py-2 border rounded"></textarea>
+                <textarea name="closing_notes" required class="w-full px-3 py-2 border rounded" placeholder="Reason for closing this account..."></textarea>
             </div>
             
             <div class="flex justify-end mt-4">
-                <button type="button" onclick="document.getElementById('closeModal').classList.add('hidden')" class="bg-gray-500 text-white px-4 py-2 rounded mr-2">
+                <button type="button" onclick="hideCloseModal()" class="bg-gray-500 text-white px-4 py-2 rounded mr-2 hover:bg-gray-600">
                     Cancel
                 </button>
-                <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded">
+                <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
                     Confirm Close
                 </button>
             </div>
@@ -427,6 +464,12 @@ include 'header.php';
 function showCloseModal(accountId) {
     document.getElementById('close_account_id').value = accountId;
     document.getElementById('closeModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden'; // Prevent scrolling when modal is open
+}
+
+function hideCloseModal() {
+    document.getElementById('closeModal').classList.add('hidden');
+    document.body.style.overflow = 'auto'; // Re-enable scrolling
 }
 
 document.getElementById('toggleLiabilityAccounts').addEventListener('click', function() {
@@ -439,6 +482,13 @@ document.getElementById('toggleLiabilityAccounts').addEventListener('click', fun
     } else {
         section.classList.add('hidden');
         button.textContent = 'Show Accounts';
+    }
+});
+
+// Close modal when clicking outside of it
+document.getElementById('closeModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideCloseModal();
     }
 });
 </script>

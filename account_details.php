@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_photo']) && iss
 
 // Check if account ID is provided
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
-    header("Location: account_management.php");
+    header("Location: account_management");
     exit();
 }
 
@@ -114,7 +114,7 @@ $account_result = $account_stmt->get_result();
 
 if ($account_result->num_rows == 0) {
     // Account not found or doesn't belong to this bank
-    header("Location: account_management.php");
+    header("Location: account_management");
     exit();
 }
 
@@ -226,7 +226,7 @@ include 'header.php';
 
                 <?php if (isset($_SESSION['role']) && ($_SESSION['role'] == 'manager' || $_SESSION['role'] == 'admin')): ?>
                     <div class="mt-6">
-                        <form method="POST" action="account_management.php" onsubmit="return confirm('Are you sure you want to close this account?');">
+                        <form method="POST" action="account_management" onsubmit="return confirm('Are you sure you want to close this account?');">
                             <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                             <input type="hidden" name="action" value="close_account">
                             <input type="hidden" name="account_id" value="<?= $account['account_id'] ?>">

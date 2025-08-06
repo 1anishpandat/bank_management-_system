@@ -131,7 +131,20 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $customer_id = (int)$_GET['id'];
 
     // Prepare and execute the query to fetch customer details
-    $stmt = $conn->prepare("SELECT * FROM customers WHERE customer_id = ?");
+    $stmt = $conn->prepare("SELECT c.*, 
+                           a.account_number as main_account_number,
+                           a.balance as main_account_balance,
+                           at.type_name as main_account_type,
+                           e.employees_first_name,
+                           e.employees_last_name,
+                           b.bank_name
+                    FROM customers c
+                    LEFT JOIN accounts a ON c.customer_id = a.user_id
+                    LEFT JOIN account_types at ON a.account_type_id = at.type_id
+                    LEFT JOIN employee e ON a.employee_id = e.employee_id
+                    LEFT JOIN bank_details b ON c.bank_id = b.bank_id
+                    WHERE c.customer_id = ?
+                    LIMIT 1");
 
     if ($stmt === false) {
         $error_message = "SQL prepare error: " . $conn->error;
@@ -250,46 +263,58 @@ include 'header.php';
                             <label class="block text-sm font-medium text-gray-700">Address:</label>
                             <p class="mt-1 text-gray-900"><?= nl2br(htmlspecialchars($customer['address'])) ?></p>
                         </div>
-                        <?php if (isset($customer['date_of_birth']) && !empty($customer['date_of_birth'])): ?>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Date of Birth:</label>
-                                <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['date_of_birth']) ?></p>
-                            </div>
-                        <?php endif; ?>
-                        <?php if (isset($customer['id_proof_type']) && !empty($customer['id_proof_type'])): ?>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">ID Proof Type:</label>
-                                <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['id_proof_type']) ?></p>
-                            </div>
-                        <?php endif; ?>
-                        <?php if (isset($customer['id_proof_number']) && !empty($customer['id_proof_number'])): ?>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">ID Proof Number:</label>
-                                <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['id_proof_number']) ?></p>
-                            </div>
-                        <?php endif; ?>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Date of Birth:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['date_of_birth']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">ID Proof Type:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['id_proof_type']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">ID Proof Number:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['id_proof_number']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Bank Name:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['bank_name']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Main Account Number:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['main_account_number']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Account Type:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['main_account_type']) ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Account Balance:</label>
+                            <p class="mt-1 text-gray-900">$<?= number_format($customer['main_account_balance'], 2) ?></p>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Created Date:</label>
                             <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['created_at']) ?></p>
                         </div>
-                        <?php if (isset($customer['updated_at']) && !empty($customer['updated_at'])): ?>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Last Updated:</label>
-                                <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['updated_at']) ?></p>
-                            </div>
-                        <?php endif; ?>
-                        <?php if (isset($customer['status']) && !empty($customer['status'])): ?>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Status:</label>
-                                <p class="mt-1 text-gray-900">
-                                    <span class="px-2 py-1 rounded-full text-xs font-semibold 
-                                        <?= $customer['status'] == 'active' ? 'bg-green-100 text-green-800' : 
-                                           ($customer['status'] == 'inactive' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') ?>">
-                                        <?= ucfirst(htmlspecialchars($customer['status'])) ?>
-                                    </span>
-                                </p>
-                            </div>
-                        <?php endif; ?>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Last Updated:</label>
+                            <p class="mt-1 text-gray-900"><?= htmlspecialchars($customer['updated_at'] ?? 'N/A') ?></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Status:</label>
+                            <p class="mt-1 text-gray-900">
+                                <span class="px-2 py-1 rounded-full text-xs font-semibold 
+                                    <?= $customer['status'] == 'active' ? 'bg-green-100 text-green-800' : 
+                                       ($customer['status'] == 'inactive' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') ?>">
+                                    <?= ucfirst(htmlspecialchars($customer['status'] ?? 'active')) ?>
+                                </span>
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Opened By:</label>
+                            <p class="mt-1 text-gray-900">
+                                <?= htmlspecialchars($customer['employees_first_name'] . ' ' . htmlspecialchars($customer['employees_last_name'])) ?>
+                            </p>
+                        </div>
                     </div>
 
                     <div class="mt-6 flex justify-end">
