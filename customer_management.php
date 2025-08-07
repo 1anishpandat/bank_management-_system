@@ -446,6 +446,12 @@ include 'header.php';
     <title>Customer Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js"></script>
+<!-- Add these in the head section -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.12/cropper.min.js"></script>
     <style>
         #photoPreview {
             max-width: 200px;
@@ -504,28 +510,221 @@ include 'header.php';
             flex-direction: column;
             justify-content: center;
         }
-        #camera-container {
-    width: 320px;
-    height: 240px;
-    background-color: #f0f0f0;
-    margin-bottom: 10px;
-    position: relative;
-}
 
-#camera-feed, #camera-canvas {
+
+
+
+/* Camera Modal Styles - Add this to your existing <style> section */
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.8);
+    justify-content: center;
+    align-items: center;
 }
 
-#face-overlay {
-    width: 150px;
-    height: 150px;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
+.modal.show {
+    display: flex;
 }
+
+.modal-content {
+    background-color: #fefefe;
+    margin: auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    border-radius: 8px;
+    position: relative;
+    overflow-y: auto;
+}
+
+.close-modal {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.close-modal:hover,
+.close-modal:focus {
+    color: black;
+    text-decoration: none;
+}
+
+/* Camera container */
+#camera-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    position: relative;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#camera-feed {
+    width: 100%;
+    height: auto;
+    max-height: 400px;
+    object-fit: cover;
+    display: block;
+}
+
+#camera-canvas {
+    display: none;
+}
+
+/* Face overlay for guidance */
+#face-overlay {
+    position: absolute;
+    border: 2px dashed #00ff00;
+    pointer-events: none;
+    display: none;
+    border-radius: 50%;
+}
+
+/* Camera controls */
+.camera-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+.camera-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+/* Photo preview and cropping */
+#photo-preview-container {
+    margin-top: 20px;
+}
+
+#crop-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    background: #f0f0f0;
+    border-radius: 4px;
+    user-select: none;
+}
+
+#photo-preview {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 4px;
+}
+
+/* Crop selection */
+#crop-selection {
+    min-width: 50px;
+    min-height: 50px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    cursor: move;
+}
+
+.crop-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border: 1px solid #333;
+    border-radius: 2px;
+}
+
+.crop-handle:hover {
+    background: #007bff;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        padding: 15px;
+        max-height: 95vh;
+    }
+    
+    .camera-controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .camera-btn {
+        width: 100%;
+        max-width: 200px;
+        margin: 2px 0;
+    }
+    
+    #crop-container {
+        max-width: 100%;
+    }
+}
+
+/* Thumbnail styles */
+#photo-thumbnail-container {
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+#photo-thumbnail {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+}
+
+#remove-photo {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 5px 10px;
+}
+
+/* Hide default file input when photo is captured */
+.photo-captured #photoUpload {
+    display: none;
+}
+
+/* Loading spinner */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
     </style>
 </head>
 <body class="bg-gray-100">
@@ -666,39 +865,113 @@ include 'header.php';
     </div>
 </div>
                     <div class="form-title">A. Personal Details</div>
-                    <!-- Add this in the "Personal Details" section -->
+                 
+
+
+                <!-- Replace the existing photo upload section in your form with this updated version -->
 <div class="form-row">
     <div class="form-group">
-        <label class="required-field">Capture Photo*</label>
-        <p class="text-xs">Take a clear photo of your face (well-lit environment)</p>
-        
-        <div class="border rounded p-2 mb-2">
-            <div id="camera-container" class="relative">
-                <video id="camera-feed" autoplay playsinline class="w-full h-auto"></video>
-                <canvas id="camera-canvas" class="hidden"></canvas>
-                <div id="face-overlay" class="absolute border-2 border-green-500 rounded-full hidden"></div>
+        <label class="required-field">PHOTO*</label>
+        <p class="text-xs">Please Paste Recent passport Size (Do not Staple)</p>
+        <div class="mt-2">
+            <!-- File upload input -->
+            <input type="file" name="customer_photo" id="photoUpload" accept="image/*" class="form-control mb-2">
+            
+            <!-- Camera capture button -->
+            <button type="button" id="open-camera-btn" class="bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded mr-2">
+                📷 Take Photo
+            </button>
+            
+            <!-- Hidden input for captured photo data -->
+            <input type="hidden" name="captured_photo" id="captured-photo">
+            
+            <!-- Photo preview -->
+            <div id="photo-thumbnail-container" class="hidden mt-3">
+                <img id="photo-thumbnail" src="#" alt="Photo Preview" class="max-w-32 h-32 object-cover border rounded">
+                <button type="button" id="remove-photo" class="ml-2 text-red-500 hover:text-red-700">Remove</button>
             </div>
             
-            <div class="flex space-x-2 mt-2">
-                <button type="button" id="start-camera" class="bg-blue-500 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
-                    Start Camera
-                </button>
-                <button type="button" id="capture-btn" class="bg-green-500 hover:bg-green-700 text-white px-3 py-1 rounded text-sm hidden">
-                    Capture Photo
-                </button>
-                <button type="button" id="retake-btn" class="bg-gray-500 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm hidden">
-                    Retake
-                </button>
-            </div>
-        </div>
-        
-        <input type="hidden" id="captured-photo" name="captured_photo">
-        <div id="photo-preview-container" class="hidden mt-2">
-            <p class="text-sm">Captured Photo:</p>
-            <img id="photo-preview" src="#" alt="Captured Photo" class="w-32 h-32 object-cover border">
+            <img id="photoPreview" src="#" alt="Photo Preview" class="mt-2">
+            <?php if (isset($errors['customer_photo'])): ?>
+                <p class="text-red-500 text-xs"><?= $errors['customer_photo'] ?></p>
+            <?php endif; ?>
         </div>
     </div>
 </div>
+
+<!-- Camera Modal -->
+<div id="cameraModal" class="modal">
+    <div class="modal-content">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Take Passport Photo</h2>
+            <span class="close-modal cursor-pointer text-2xl">&times;</span>
+        </div>
+        
+        <div class="modal-body">
+            <!-- Camera container -->
+            <div id="camera-container" class="relative">
+                <video id="camera-feed" autoplay playsinline class="w-full max-h-96 object-cover border rounded"></video>
+                <canvas id="camera-canvas" class="hidden"></canvas>
+                <div id="face-overlay" class="absolute border-2 border-green-400 rounded hidden"></div>
+            </div>
+            
+            <!-- Camera controls -->
+            <div class="camera-controls flex justify-center gap-2 mt-4">
+                <button type="button" id="start-camera" class="camera-btn bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                    Start Camera
+                </button>
+                <button type="button" id="capture-btn" class="camera-btn bg-green-500 hover:bg-green-700 text-white px-4 py-2 rounded hidden">
+                    📸 Capture
+                </button>
+                <button type="button" id="retake-btn" class="camera-btn bg-yellow-500 hover:bg-yellow-700 text-white px-4 py-2 rounded hidden">
+                    🔄 Retake
+                </button>
+                <button type="button" id="save-photo-btn" class="camera-btn bg-blue-600 hover:bg-blue-800 text-white px-4 py-2 rounded hidden">
+                    💾 Save Photo
+                </button>
+            </div>
+            
+            <!-- Photo preview and cropping -->
+            <div id="photo-preview-container" class="hidden mt-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-bold">Crop Your Photo</h3>
+                    <div class="flex space-x-2">
+                        <button type="button" id="crop-passport" class="bg-gray-200 hover:bg-gray-300 px-2 py-1 text-xs rounded">
+                            Passport (3:4)
+                        </button>
+                        <button type="button" id="crop-square" class="bg-gray-200 hover:bg-gray-300 px-2 py-1 text-xs rounded">
+                            Square (1:1)
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Crop container -->
+                <div id="crop-container" class="relative border-2 border-dashed border-gray-400 overflow-hidden" style="max-height: 400px;">
+                    <img id="photo-preview" src="#" alt="Captured Photo" class="max-w-full block">
+                    
+                    <!-- Crop selection overlay -->
+                    <div id="crop-selection" class="absolute border-2 border-white shadow-lg bg-transparent hidden" style="cursor: move;">
+                        <!-- Crop handles -->
+                        <div class="crop-handle absolute w-3 h-3 bg-white border border-gray-400 -top-1 -left-1" data-handle="nw" style="cursor: nw-resize;"></div>
+                        <div class="crop-handle absolute w-3 h-3 bg-white border border-gray-400 -top-1 -right-1" data-handle="ne" style="cursor: ne-resize;"></div>
+                        <div class="crop-handle absolute w-3 h-3 bg-white border border-gray-400 -bottom-1 -left-1" data-handle="sw" style="cursor: sw-resize;"></div>
+                        <div class="crop-handle absolute w-3 h-3 bg-white border border-gray-400 -bottom-1 -right-1" data-handle="se" style="cursor: se-resize;"></div>
+                        
+                        <!-- Center drag handle -->
+                        <div class="absolute inset-0 cursor-move"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-2 flex justify-center">
+                    <button type="button" id="crop-btn" class="bg-green-500 hover:bg-green-700 text-white px-4 py-2 rounded">
+                        ✂️ Crop Photo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label class="required-field">1. Name* (Same as ID Proof)</label>
@@ -2255,104 +2528,126 @@ include 'header.php';
         </div>
     <?php endif; ?>
 </div>
-<!-- Add these in the head section -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+
+
 <script>
+// Camera and Photo Capture JavaScript - Replace the existing camera script section
 
-document.getElementById('accountForm').addEventListener('submit', function(e) {
-    // Check if photo was captured
-    const capturedPhoto = document.getElementById('captured-photo').value;
-    if (!capturedPhoto) {
-        e.preventDefault();
-        Swal.fire({
-            icon: 'error',
-            title: 'Photo Required',
-            text: 'Please capture a photo using the camera',
-        });
-        return;
-    }
-    
-    // Rest of your validation code...
-});
-
-    // Camera and face detection functionality
+// Global variables
 let stream = null;
 let capturedImage = null;
+let cropper = null;
 
-// Load face detection models
-async function loadModels() {
-    await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-    await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
-}
+// Cropping variables
+let isSelecting = false;
+let isDragging = false;
+let isResizing = false;
+let currentHandle = null;
+let startX = 0;
+let startY = 0;
+let cropData = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0
+};
 
-// Initialize camera
-document.getElementById('start-camera').addEventListener('click', async function() {
-    try {
-        await loadModels();
-        
-        stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                width: 320, 
-                height: 240,
-                facingMode: 'user' 
-            }, 
-            audio: false 
-        });
-        
-        const video = document.getElementById('camera-feed');
-        video.srcObject = stream;
-        
-        this.classList.add('hidden');
-        document.getElementById('capture-btn').classList.remove('hidden');
-        
-        // Start face detection
-        detectFaces();
-    } catch (err) {
-        console.error("Error accessing camera: ", err);
-        Swal.fire('Camera Error', 'Could not access the camera. Please make sure you have granted camera permissions.', 'error');
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCameraModal();
 });
 
-// Face detection function
-async function detectFaces() {
-    const video = document.getElementById('camera-feed');
-    const overlay = document.getElementById('face-overlay');
+function initializeCameraModal() {
+    // Get modal elements
+    const modal = document.getElementById('cameraModal');
+    const openCameraBtn = document.getElementById('open-camera-btn');
+    const closeModal = document.querySelector('.close-modal');
     
-    if (!stream) return;
+    // Camera controls
+    const startCameraBtn = document.getElementById('start-camera');
+    const captureBtn = document.getElementById('capture-btn');
+    const retakeBtn = document.getElementById('retake-btn');
+    const savePhotoBtn = document.getElementById('save-photo-btn');
     
-    const displaySize = { width: video.width, height: video.height };
-    faceapi.matchDimensions(overlay, displaySize);
+    // Cropping controls
+    const cropBtn = document.getElementById('crop-btn');
+    const cropPassportBtn = document.getElementById('crop-passport');
+    const cropSquareBtn = document.getElementById('crop-square');
     
-    setInterval(async () => {
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks();
-        
-        if (detections.length > 0) {
-            const resizedDetections = faceapi.resizeResults(detections, displaySize);
-            const box = resizedDetections[0].detection.box;
-            
-            // Position overlay on the face
-            overlay.style.width = `${box.width * 1.5}px`;
-            overlay.style.height = `${box.height * 1.5}px`;
-            overlay.style.left = `${box.x - (box.width * 0.25)}px`;
-            overlay.style.top = `${box.y - (box.height * 0.25)}px`;
-            overlay.classList.remove('hidden');
-        } else {
-            overlay.classList.add('hidden');
+    // Photo management
+    const removePhotoBtn = document.getElementById('remove-photo');
+    const fileInput = document.getElementById('photoUpload');
+    
+    // Event listeners
+    if (openCameraBtn) {
+        openCameraBtn.addEventListener('click', openCameraModal);
+    }
+    
+    if (closeModal) {
+        closeModal.addEventListener('click', closeCameraModal);
+    }
+    
+    if (startCameraBtn) {
+        startCameraBtn.addEventListener('click', initializeCamera);
+    }
+    
+    if (captureBtn) {
+        captureBtn.addEventListener('click', capturePhoto);
+    }
+    
+    if (retakeBtn) {
+        retakeBtn.addEventListener('click', retakePhoto);
+    }
+    
+    if (savePhotoBtn) {
+        savePhotoBtn.addEventListener('click', savePhoto);
+    }
+    
+    if (cropBtn) {
+        cropBtn.addEventListener('click', cropPhoto);
+    }
+    
+    if (cropPassportBtn) {
+        cropPassportBtn.addEventListener('click', () => applyCropRatio(3, 4));
+    }
+    
+    if (cropSquareBtn) {
+        cropSquareBtn.addEventListener('click', () => applyCropRatio(1, 1));
+    }
+    
+    if (removePhotoBtn) {
+        removePhotoBtn.addEventListener('click', removePhoto);
+    }
+    
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFileSelect);
+    }
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            closeCameraModal();
         }
-    }, 100);
+    });
+    
+    // Initialize cropping functionality
+    setupCroppingEvents();
 }
 
-// Capture photo
-document.getElementById('capture-btn').addEventListener('click', function() {
-    const video = document.getElementById('camera-feed');
-    const canvas = document.getElementById('camera-canvas');
-    const context = canvas.getContext('2d');
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+function openCameraModal() {
+    const modal = document.getElementById('cameraModal');
+    if (modal) {
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeCameraModal() {
+    const modal = document.getElementById('cameraModal');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
     
     // Stop camera stream
     if (stream) {
@@ -2360,165 +2655,619 @@ document.getElementById('capture-btn').addEventListener('click', function() {
         stream = null;
     }
     
-    // Process the image (simple background removal - you might want to use a more sophisticated solution)
-    processImage(canvas);
-    
-    // Show preview
-    capturedImage = canvas.toDataURL('image/jpeg');
-    document.getElementById('photo-preview').src = capturedImage;
-    document.getElementById('photo-preview-container').classList.remove('hidden');
-    document.getElementById('captured-photo').value = capturedImage;
-    
-    // Update buttons
-    this.classList.add('hidden');
-    document.getElementById('retake-btn').classList.remove('hidden');
-});
+    // Reset UI
+    resetCameraUI();
+}
 
-// Retake photo
-document.getElementById('retake-btn').addEventListener('click', function() {
-    document.getElementById('photo-preview-container').classList.add('hidden');
-    document.getElementById('captured-photo').value = '';
-    document.getElementById('start-camera').click();
-    this.classList.add('hidden');
-});
-
-// Simple background removal (basic implementation)
-function processImage(canvas) {
-    const context = canvas.getContext('2d');
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
+function resetCameraUI() {
+    const startBtn = document.getElementById('start-camera');
+    const captureBtn = document.getElementById('capture-btn');
+    const retakeBtn = document.getElementById('retake-btn');
+    const saveBtn = document.getElementById('save-photo-btn');
+    const previewContainer = document.getElementById('photo-preview-container');
+    const video = document.getElementById('camera-feed');
     
-    // This is a very basic background removal - for production, consider using a proper library
-    for (let i = 0; i < data.length; i += 4) {
-        // Simple green screen effect (adjust thresholds as needed)
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
+    if (startBtn) startBtn.classList.remove('hidden');
+    if (captureBtn) captureBtn.classList.add('hidden');
+    if (retakeBtn) retakeBtn.classList.add('hidden');
+    if (saveBtn) saveBtn.classList.add('hidden');
+    if (previewContainer) previewContainer.classList.add('hidden');
+    if (video) video.srcObject = null;
+}
+
+async function initializeCamera() {
+    const startBtn = document.getElementById('start-camera');
+    const captureBtn = document.getElementById('capture-btn');
+    const video = document.getElementById('camera-feed');
+    
+    try {
+        // Request camera permission and stream
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 1280, min: 640 },
+                height: { ideal: 720, min: 480 },
+                facingMode: 'user'
+            },
+            audio: false
+        });
         
-        // If pixel is within face area or doesn't match background, keep it
-        if (!(g > r && g > b && g > 100)) { // Adjust this condition based on your needs
-            // Keep the pixel
-        } else {
-            // Make pixel transparent
-            data[i + 3] = 0;
+        // Set video source
+        if (video) {
+            video.srcObject = stream;
+            
+            // Wait for video to be ready
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play().then(resolve).catch(console.error);
+                };
+            });
         }
+        
+        // Update UI
+        if (startBtn) startBtn.classList.add('hidden');
+        if (captureBtn) captureBtn.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        alert('Could not access the camera. Please make sure you have granted camera permissions and try again.');
+    }
+}
+
+function capturePhoto() {
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('camera-canvas');
+    const captureBtn = document.getElementById('capture-btn');
+    const retakeBtn = document.getElementById('retake-btn');
+    const previewContainer = document.getElementById('photo-preview-container');
+    
+    if (!video || !canvas) {
+        console.error('Video or canvas element not found');
+        return;
     }
     
-    context.putImageData(imageData, 0, 0);
+    // Set canvas dimensions
+    canvas.width = video.videoWidth || video.clientWidth;
+    canvas.height = video.videoHeight || video.clientHeight;
+    
+    // Draw current video frame to canvas
+    const context = canvas.getContext('2d');
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Get image data
+    capturedImage = canvas.toDataURL('image/jpeg', 0.9);
+    
+    // Show preview
+    showPhotoPreview(capturedImage);
+    
+    // Update UI
+    if (captureBtn) captureBtn.classList.add('hidden');
+    if (retakeBtn) retakeBtn.classList.remove('hidden');
+    if (previewContainer) previewContainer.classList.remove('hidden');
+    
+    // Stop camera
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
 }
-    // Photo preview functionality
-    document.getElementById('photoUpload').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const preview = document.getElementById('photoPreview');
-                preview.src = event.target.result;
-                preview.style.display = 'block';
-            };
-            reader.readAsDataURL(file);
-        }
-    });
 
-    // Guardian section toggle based on age
-    document.getElementById('dobInput').addEventListener('change', function() {
-        const dob = new Date(this.value);
-        const today = new Date();
-        let age = today.getFullYear() - dob.getFullYear();
-        const monthDiff = today.getMonth() - dob.getMonth();
-        
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-            age--;
-        }
-        
-        const guardianSection = document.querySelector('.guardian-section');
-        if (age < 18) {
-            guardianSection.style.display = 'block';
-            document.getElementById('guardianNameInput').required = true;
-        } else {
-            guardianSection.style.display = 'none';
-            document.getElementById('guardianNameInput').required = false;
-        }
-    });
+function showPhotoPreview(imageData) {
+    const preview = document.getElementById('photo-preview');
+    if (preview) {
+        preview.onload = function() {
+            // Initialize cropping after image loads
+            setTimeout(() => {
+                initializeCropping();
+            }, 100);
+        };
+        preview.src = imageData;
+    }
+}
 
-    // Search functionality
-    document.getElementById('searchInput').addEventListener('keyup', function() {
-        const input = this.value.toLowerCase();
-        const rows = document.querySelectorAll('#customerTable tr');
-        
-        rows.forEach(row => {
-            if (row.textContent.toLowerCase().indexOf(input) > -1) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-    });
+function retakePhoto() {
+    const previewContainer = document.getElementById('photo-preview-container');
+    const retakeBtn = document.getElementById('retake-btn');
+    const saveBtn = document.getElementById('save-photo-btn');
+    
+    // Hide preview and buttons
+    if (previewContainer) previewContainer.classList.add('hidden');
+    if (retakeBtn) retakeBtn.classList.add('hidden');
+    if (saveBtn) saveBtn.classList.add('hidden');
+    
+    // Clear captured image
+    capturedImage = null;
+    
+    // Restart camera
+    initializeCamera();
+}
 
-     // Form submission confirmation
-     document.getElementById('accountForm').addEventListener('submit', function(e) {
-        // Validate form before submission
-        const requiredFields = this.querySelectorAll('[required]');
-        let isValid = true;
-        
-        requiredFields.forEach(field => {
-            if (!field.value.trim()) {
-                isValid = false;
-                field.classList.add('border-red-500');
-            } else {
-                field.classList.remove('border-red-500');
-            }
-        });
-        
-        if (!isValid) {
-            e.preventDefault();
-            Swal.fire({
-                icon: 'error',
-                title: 'Missing Information',
-                text: 'Please fill in all required fields',
-            });
-            return;
-        }
-        
-        // Confirm submission
-        e.preventDefault();
+function savePhoto() {
+    if (!capturedImage) {
+        alert('No photo to save');
+        return;
+    }
+    
+    // Set captured photo data
+    const capturedPhotoInput = document.getElementById('captured-photo');
+    const photoThumbnail = document.getElementById('photo-thumbnail');
+    const thumbnailContainer = document.getElementById('photo-thumbnail-container');
+    const fileInput = document.getElementById('photoUpload');
+    
+    if (capturedPhotoInput) {
+        capturedPhotoInput.value = capturedImage;
+    }
+    
+    if (photoThumbnail) {
+        photoThumbnail.src = capturedImage;
+    }
+    
+    if (thumbnailContainer) {
+        thumbnailContainer.classList.remove('hidden');
+    }
+    
+    // Mark as photo captured
+    if (fileInput) {
+        fileInput.parentElement.classList.add('photo-captured');
+    }
+    
+    // Close modal
+    closeCameraModal();
+    
+    // Show success message
+    if (typeof Swal !== 'undefined') {
         Swal.fire({
-            title: 'Confirm Account Opening',
-            text: 'Are you sure you want to submit this account opening form?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#3085d6',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Yes, submit it!'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                this.submit();
-            }
+            icon: 'success',
+            title: 'Photo Saved!',
+            text: 'Your photo has been successfully captured and saved.',
+            timer: 2000,
+            showConfirmButton: false
         });
-    });
+    } else {
+        alert('Photo saved successfully!');
+    }
+}
 
-    // Auto-format phone number
-    document.querySelector('input[name="phone"]').addEventListener('input', function(e) {
-        let value = this.value.replace(/\D/g, '');
-        if (value.length > 10) {
-            value = value.substring(0, 10);
-        }
-        this.value = value;
-    });
+function removePhoto() {
+    const capturedPhotoInput = document.getElementById('captured-photo');
+    const thumbnailContainer = document.getElementById('photo-thumbnail-container');
+    const photoThumbnail = document.getElementById('photo-thumbnail');
+    const fileInput = document.getElementById('photoUpload');
+    const photoPreview = document.getElementById('photoPreview');
+    
+    // Clear the captured photo input
+    if (capturedPhotoInput) {
+        capturedPhotoInput.value = '';
+    }
+    
+    // Hide and clear the thumbnail
+    if (thumbnailContainer) {
+        thumbnailContainer.classList.add('hidden');
+    }
+    
+    if (photoThumbnail) {
+        photoThumbnail.src = '#';
+    }
+    
+    // Clear the file input
+    if (fileInput) {
+        fileInput.value = '';
+        fileInput.parentElement.classList.remove('photo-captured');
+    }
+    
+    // Hide the photo preview if visible
+    if (photoPreview) {
+        photoPreview.style.display = 'none';
+        photoPreview.src = '#';
+    }
+    
+    // Clear the captured image data
+    capturedImage = null;
+    
+    // Show success message
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            icon: 'success',
+            title: 'Photo Removed!',
+            text: 'The photo has been successfully removed.',
+            timer: 1500,
+            showConfirmButton: false
+        });
+    }
+}
 
-    // Auto-format names to uppercase
-    document.querySelector('input[name="first_name"]').addEventListener('input', function(e) {
-        this.value = this.value.toUpperCase();
-    });
-    document.querySelector('input[name="last_name"]').addEventListener('input', function(e) {
-        this.value = this.value.toUpperCase();
-    });
-    document.querySelector('input[name="id_proof_number"]').addEventListener('input', function(e) {
-        this.value = this.value.toUpperCase();
-    });
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const preview = document.getElementById('photoPreview');
+            if (preview) {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+}
 
-    // Initialize date picker with max date as today
-    document.getElementById('dobInput').max = new Date().toISOString().split('T')[0];
+// Cropping functionality
+function setupCroppingEvents() {
+    const cropContainer = document.getElementById('crop-container');
+    const cropSelection = document.getElementById('crop-selection');
+    
+    if (!cropContainer || !cropSelection) return;
+    
+    // Mouse events
+    cropContainer.addEventListener('mousedown', startSelection);
+    document.addEventListener('mousemove', updateSelection);
+    document.addEventListener('mouseup', endSelection);
+    
+    // Touch events for mobile
+    cropContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+    
+    // Handle events for resizing
+    const handles = cropSelection.querySelectorAll('.crop-handle');
+    handles.forEach(handle => {
+        handle.addEventListener('mousedown', startResize);
+        handle.addEventListener('touchstart', startResize, { passive: false });
+    });
+    
+    // Drag selection
+    const dragArea = cropSelection.querySelector('.absolute.inset-0');
+    if (dragArea) {
+        dragArea.addEventListener('mousedown', startDrag);
+        dragArea.addEventListener('touchstart', startDrag, { passive: false });
+    }
+}
+
+function initializeCropping() {
+    const cropSelection = document.getElementById('crop-selection');
+    const preview = document.getElementById('photo-preview');
+    
+    if (!cropSelection || !preview) return;
+    
+    // Wait for image to load and get dimensions
+    const rect = preview.getBoundingClientRect();
+    
+    // Set default crop area (passport ratio 3:4)
+    const defaultWidth = Math.min(rect.width * 0.6, 200);
+    const defaultHeight = defaultWidth * (4/3);
+    
+    const defaultLeft = (rect.width - defaultWidth) / 2;
+    const defaultTop = (rect.height - defaultHeight) / 2;
+    
+    // Apply crop selection
+    cropSelection.style.left = defaultLeft + 'px';
+    cropSelection.style.top = defaultTop + 'px';
+    cropSelection.style.width = defaultWidth + 'px';
+    cropSelection.style.height = defaultHeight + 'px';
+    cropSelection.style.display = 'block';
+    
+    // Store crop data
+    cropData = {
+        x: defaultLeft,
+        y: defaultTop,
+        width: defaultWidth,
+        height: defaultHeight
+    };
+}
+
+function startSelection(e) {
+    if (e.target.closest('.crop-handle') || e.target.closest('#crop-selection')) {
+        return;
+    }
+    
+    e.preventDefault();
+    isSelecting = true;
+    
+    const cropContainer = document.getElementById('crop-container');
+    const cropSelection = document.getElementById('crop-selection');
+    const rect = cropContainer.getBoundingClientRect();
+    
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    startX = clientX - rect.left;
+    startY = clientY - rect.top;
+    
+    // Reset crop selection
+    cropSelection.style.left = startX + 'px';
+    cropSelection.style.top = startY + 'px';
+    cropSelection.style.width = '0px';
+    cropSelection.style.height = '0px';
+    cropSelection.style.display = 'block';
+}
+
+function updateSelection(e) {
+    if (!isSelecting && !isDragging && !isResizing) return;
+    
+    e.preventDefault();
+    
+    const cropContainer = document.getElementById('crop-container');
+    const cropSelection = document.getElementById('crop-selection');
+    const rect = cropContainer.getBoundingClientRect();
+    
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    if (!clientX || !clientY) return;
+    
+    const currentX = clientX - rect.left;
+    const currentY = clientY - rect.top;
+    
+    if (isSelecting) {
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+        const left = Math.min(startX, currentX);
+        const top = Math.min(startY, currentY);
+        
+        // Constrain to container bounds
+        const maxWidth = rect.width - left;
+        const maxHeight = rect.height - top;
+        
+        cropSelection.style.left = Math.max(0, left) + 'px';
+        cropSelection.style.top = Math.max(0, top) + 'px';
+        cropSelection.style.width = Math.min(width, maxWidth) + 'px';
+        cropSelection.style.height = Math.min(height, maxHeight) + 'px';
+        
+    } else if (isDragging) {
+        const deltaX = currentX - startX;
+        const deltaY = currentY - startY;
+        
+        const currentLeft = parseInt(cropSelection.style.left) || 0;
+        const currentTop = parseInt(cropSelection.style.top) || 0;
+        const selectionWidth = parseInt(cropSelection.style.width) || 0;
+        const selectionHeight = parseInt(cropSelection.style.height) || 0;
+        
+        const newLeft = Math.max(0, Math.min(currentLeft + deltaX, rect.width - selectionWidth));
+        const newTop = Math.max(0, Math.min(currentTop + deltaY, rect.height - selectionHeight));
+        
+        cropSelection.style.left = newLeft + 'px';
+        cropSelection.style.top = newTop + 'px';
+        
+        startX = currentX;
+        startY = currentY;
+        
+    } else if (isResizing && currentHandle) {
+        handleResize(currentX, currentY, currentHandle);
+    }
+}
+
+function endSelection() {
+    isSelecting = false;
+    isDragging = false;
+    isResizing = false;
+    currentHandle = null;
+    
+    // Update crop data
+    const cropSelection = document.getElementById('crop-selection');
+    if (cropSelection) {
+        cropData = {
+            x: parseInt(cropSelection.style.left) || 0,
+            y: parseInt(cropSelection.style.top) || 0,
+            width: parseInt(cropSelection.style.width) || 0,
+            height: parseInt(cropSelection.style.height) || 0
+        };
+    }
+}
+
+function startDrag(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isDragging = true;
+    const rect = document.getElementById('crop-container').getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    startX = clientX - rect.left;
+    startY = clientY - rect.top;
+}
+
+function startResize(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isResizing = true;
+    currentHandle = e.target.getAttribute('data-handle');
+    
+    const rect = document.getElementById('crop-container').getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    
+    startX = clientX - rect.left;
+    startY = clientY - rect.top;
+}
+
+function handleResize(currentX, currentY, handle) {
+    const cropSelection = document.getElementById('crop-selection');
+    const cropContainer = document.getElementById('crop-container');
+    
+    if (!cropSelection || !cropContainer) return;
+    
+    let left = parseInt(cropSelection.style.left) || 0;
+    let top = parseInt(cropSelection.style.top) || 0;
+    let width = parseInt(cropSelection.style.width) || 0;
+    let height = parseInt(cropSelection.style.height) || 0;
+    
+    const containerRect = cropContainer.getBoundingClientRect();
+    
+    switch (handle) {
+        case 'nw':
+            const newLeft = Math.max(0, Math.min(currentX, left + width - 30));
+            const newTop = Math.max(0, Math.min(currentY, top + height - 30));
+            width = left + width - newLeft;
+            height = top + height - newTop;
+            left = newLeft;
+            top = newTop;
+            break;
+            
+        case 'ne':
+            const newWidth = Math.max(30, Math.min(currentX - left, containerRect.width - left));
+            const newTop2 = Math.max(0, Math.min(currentY, top + height - 30));
+            width = newWidth;
+            height = top + height - newTop2;
+            top = newTop2;
+            break;
+            
+        case 'sw':
+            const newLeft2 = Math.max(0, Math.min(currentX, left + width - 30));
+            const newHeight = Math.max(30, Math.min(currentY - top, containerRect.height - top));
+            width = left + width - newLeft2;
+            height = newHeight;
+            left = newLeft2;
+            break;
+            
+        case 'se':
+            width = Math.max(30, Math.min(currentX - left, containerRect.width - left));
+            height = Math.max(30, Math.min(currentY - top, containerRect.height - top));
+            break;
+    }
+    
+    // Apply new dimensions
+    cropSelection.style.left = left + 'px';
+    cropSelection.style.top = top + 'px';
+    cropSelection.style.width = width + 'px';
+    cropSelection.style.height = height + 'px';
+}
+
+function applyCropRatio(widthRatio, heightRatio) {
+    const cropSelection = document.getElementById('crop-selection');
+    const preview = document.getElementById('photo-preview');
+    
+    if (!cropSelection || !preview) return;
+    
+    const previewRect = preview.getBoundingClientRect();
+    const maxWidth = previewRect.width * 0.8;
+    const maxHeight = previewRect.height * 0.8;
+    
+    let width, height;
+    
+    // Calculate dimensions maintaining ratio
+    if (maxWidth / maxHeight > widthRatio / heightRatio) {
+        height = maxHeight;
+        width = height * (widthRatio / heightRatio);
+    } else {
+        width = maxWidth;
+        height = width * (heightRatio / widthRatio);
+    }
+    
+    // Center the crop area
+    const left = (previewRect.width - width) / 2;
+    const top = (previewRect.height - height) / 2;
+    
+    // Apply crop selection
+    cropSelection.style.left = left + 'px';
+    cropSelection.style.top = top + 'px';
+    cropSelection.style.width = width + 'px';
+    cropSelection.style.height = height + 'px';
+    cropSelection.style.display = 'block';
+}
+
+function cropPhoto() {
+    const preview = document.getElementById('photo-preview');
+    const cropSelection = document.getElementById('crop-selection');
+    
+    if (!preview || !cropSelection || !capturedImage) {
+        alert('Please select a valid crop area');
+        return;
+    }
+    
+    const left = parseInt(cropSelection.style.left) || 0;
+    const top = parseInt(cropSelection.style.top) || 0;
+    const width = parseInt(cropSelection.style.width) || 0;
+    const height = parseInt(cropSelection.style.height) || 0;
+    
+    if (width === 0 || height === 0) {
+        alert('Please select a valid crop area');
+        return;
+    }
+    
+    // Create temporary image to get actual dimensions
+    const tempImg = new Image();
+    tempImg.onload = function() {
+        // Calculate scale factors between display and actual image
+        const displayWidth = preview.offsetWidth;
+        const displayHeight = preview.offsetHeight;
+        const actualWidth = tempImg.width;
+        const actualHeight = tempImg.height;
+        
+        const scaleX = actualWidth / displayWidth;
+        const scaleY = actualHeight / displayHeight;
+        
+        // Calculate actual crop coordinates
+        const actualLeft = left * scaleX;
+        const actualTop = top * scaleY;
+        const actualCropWidth = width * scaleX;
+        const actualCropHeight = height * scaleY;
+        
+        // Create canvas for cropping
+        const cropCanvas = document.createElement('canvas');
+        const cropCtx = cropCanvas.getContext('2d');
+        
+        cropCanvas.width = actualCropWidth;
+        cropCanvas.height = actualCropHeight;
+        
+        // Draw cropped image
+        cropCtx.drawImage(
+            tempImg,
+            actualLeft, actualTop, actualCropWidth, actualCropHeight,
+            0, 0, actualCropWidth, actualCropHeight
+        );
+        
+        // Get cropped image data
+        capturedImage = cropCanvas.toDataURL('image/jpeg', 0.9);
+        
+        // Update preview with cropped image
+        preview.src = capturedImage;
+        preview.onload = function() {
+            // Hide crop selection after cropping
+            cropSelection.style.display = 'none';
+            
+            // Show save button
+            const saveBtn = document.getElementById('save-photo-btn');
+            if (saveBtn) {
+                saveBtn.classList.remove('hidden');
+            }
+        };
+    };
+    
+    tempImg.src = capturedImage;
+}
+
+// Touch event handlers
+function handleTouchStart(e) {
+    if (e.target.closest('.crop-handle')) {
+        startResize(e);
+    } else if (e.target.closest('#crop-selection')) {
+        startDrag(e);
+    } else {
+        startSelection(e);
+    }
+}
+
+function handleTouchMove(e) {
+    updateSelection(e);
+}
+
+function handleTouchEnd(e) {
+    endSelection();
+}
+
+// Utility function to check if device supports camera
+function isCameraSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+// Initialize camera support check
+document.addEventListener('DOMContentLoaded', function() {
+    const openCameraBtn = document.getElementById('open-camera-btn');
+    if (openCameraBtn && !isCameraSupported()) {
+        openCameraBtn.style.display = 'none';
+        console.warn('Camera not supported on this device');
+    }
+});
 </script>
-
 <?php include 'footer.php'; ?>
