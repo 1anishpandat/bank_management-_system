@@ -1009,23 +1009,24 @@ include 'header.php';
                     </div>
                     
                     <div class="form-row">
-                        <div class="form-group">
-                            <label>6. Name of* (Please tick one)</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="relative_type" class="form-radio">
-                                    <span class="ml-2">Father</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="relative_type" class="form-radio">
-                                    <span class="ml-2">Mother</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="relative_type" class="form-radio" checked>
-                                    <span class="ml-2">Spouse*</span>
-                                </label>
-                            </div>
-                        </div>
+    <div class="form-group">
+        <label class="required-field">6. Name of* (Please tick one)</label>
+        <div class="option-group mt-2">
+            <label class="option-item">
+                <input type="radio" name="relative_type" class="form-radio" value="father">
+                <span>Father</span>
+            </label>
+            <label class="option-item">
+                <input type="radio" name="relative_type" class="form-radio" value="mother">
+                <span>Mother</span>
+            </label>
+            <label class="option-item">
+                <input type="radio" name="relative_type" class="form-radio" value="spouse" checked>
+                <span>Spouse*</span>
+            </label>
+        </div>
+    </div>
+</div>
                         <div class="form-group">
                             <label>7. Name of Guardian (Father name is mandatory, #PAN is not provided)</label>
                             <input type="text" class="form-control" id="guardianNameInput" name="guardian_name"
@@ -1116,52 +1117,53 @@ include 'header.php';
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>15. Category</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="category" class="form-radio">
-                                    <span class="ml-2">General</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="category" class="form-radio">
-                                    <span class="ml-2">OBC</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="category" class="form-radio">
-                                    <span class="ml-2">SC</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="category" class="form-radio">
-                                    <span class="ml-2">ST</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+    <label>15. Category</label>
+    <div class="option-group mt-2">
+        <label class="option-item">
+            <input type="radio" name="category" class="form-radio" value="general">
+            <span>General</span>
+        </label>
+        <label class="option-item">
+            <input type="radio" name="category" class="form-radio" value="obc">
+            <span>OBC</span>
+        </label>
+        <label class="option-item">
+            <input type="radio" name="category" class="form-radio" value="sc">
+            <span>SC</span>
+        </label>
+        <label class="option-item">
+            <input type="radio" name="category" class="form-radio" value="st">
+            <span>ST</span>
+        </label>
+    </div>
+</div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>16. Person with Disability</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="disability" class="form-radio" value="yes">
-                                    <span class="ml-2">Yes</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="disability" class="form-radio" value="no" checked>
-                                    <span class="ml-2">No</span>
-                                </label>
-                                <div class="mt-2 ml-6">
-                                    <label class="inline-flex items-center">
-                                        <input type="checkbox" class="form-checkbox">
-                                        <span class="ml-2">Visually impaired</span>
-                                    </label>
-                                    <label class="inline-flex items-center ml-4">
-                                        <input type="checkbox" class="form-checkbox">
-                                        <span class="ml-2">Differently abled</span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+<div class="form-row">
+    <div class="form-group">
+        <label>16. Person with Disability</label>
+        <div class="option-group mt-2">
+            <label class="option-item">
+                <input type="radio" name="disability" class="form-radio" value="yes">
+                <span>Yes</span>
+            </label>
+            <label class="option-item">
+                <input type="radio" name="disability" class="form-radio" value="no" checked>
+                <span>No</span>
+            </label>
+        </div>
+        
+        <div class="option-group mt-3 ml-1">
+            <label class="option-item">
+                <input type="checkbox" name="disability_types[]" class="form-checkbox" value="visually_impaired">
+                <span>Visually impaired</span>
+            </label>
+            <label class="option-item">
+                <input type="checkbox" name="disability_types[]" class="form-checkbox" value="differently_abled">
+                <span>Differently abled</span>
+            </label>
+        </div>
+    </div>
+</div>
                         <div class="form-group">
                             <label>17. Educational Qualification</label>
                             <select class="form-control">
@@ -1182,23 +1184,23 @@ include 'header.php';
                     </div>
                     
                     <div class="form-row">
-                        <div class="form-group">
-                            <label>18. Please Tick the Politically Exposed Person</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="pep" class="form-radio" value="yes">
-                                    <span class="ml-2">Politically Exposed Person</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="pep" class="form-radio" value="related">
-                                    <span class="ml-2">Related to Politically Exposed Person</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="pep" class="form-radio" value="none" checked>
-                                    <span class="ml-2">None Applicable</span>
-                                </label>
-                            </div>
-
+    <div class="form-group">
+        <label>18. Please Tick the Politically Exposed Person</label>
+        <div class="option-group mt-2">
+            <label class="option-item">
+                <input type="radio" name="pep" class="form-radio" value="yes">
+                <span>Politically Exposed Person</span>
+            </label>
+            <label class="option-item">
+                <input type="radio" name="pep" class="form-radio" value="related">
+                <span>Related to Politically Exposed Person</span>
+            </label>
+            <label class="option-item">
+                <input type="radio" name="pep" class="form-radio" value="none" checked>
+                <span>None Applicable</span>
+            </label>
+        </div>
+    </div>
 
 
                             <p class="text-xs mt-1">(Politically Exposed Persons are individuals who are or have been entrusted with prominent public functions in a foreign country e.g. Heads of State / Governments, Senior Politicians / Senior Governments / Judicials / Military Officers, Senior Executives of State-owned Corporations, Important Political Party Officials, etc.)</p>
@@ -1207,17 +1209,17 @@ include 'header.php';
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label>19. Country of Tax Residence in India only and not in any other country or territory outside India*</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="tax_residence" class="form-radio" value="yes" checked>
-                                    <span class="ml-2">Yes</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="tax_residence" class="form-radio" value="no">
-                                    <span class="ml-2">No</span>
-                                </label>
-                                <p class="text-xs mt-1">(If no, please fill the FATCA details form - Annexure I)</p>
+                        <label>19. Country of Tax Residence in India only and not in any other country or territory outside India*</label>
+<div class="mt-2 flex items-center">
+    <label class="inline-flex items-center mr-4">
+        <input type="radio" name="tax_residence" class="form-radio" value="yes" checked>
+        <span class="ml-2">Yes</span>
+    </label>
+    <label class="inline-flex items-center">
+        <input type="radio" name="tax_residence" class="form-radio" value="no">
+        <span class="ml-2">No</span>
+    </label>
+                                <p class="text-xs mt-9">(If no, please fill the FATCA details form - Annexure I)</p>
                             </div>
                         </div>
                         <div class="form-group">
@@ -1297,14 +1299,14 @@ include 'header.php';
                         <div class="form-group">
                             <label>Whether submitted document is equivalent e-document:</label>
                             <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="e_document" class="form-radio" value="yes">
-                                    <span class="ml-2">Yes</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="e_document" class="form-radio" value="no" checked>
-                                    <span class="ml-2">No</span>
-                                </label>
+                            <label class="inline-flex items-center mr-4">
+        <input type="radio" name="tax_residence" class="form-radio" value="yes" checked>
+        <span class="ml-2">Yes</span>
+    </label>
+    <label class="inline-flex items-center">
+        <input type="radio" name="tax_residence" class="form-radio" value="no">
+        <span class="ml-2">No</span>
+    </label>
                             </div>
                         </div>
                     </div>
@@ -1343,33 +1345,33 @@ include 'header.php';
                     </div>
                 </div>
 
-                <!-- Address Details Section -->
                 <div class="form-section">
-                    <div class="form-title">D. Address details Current Overseas</div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Address type*</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="address_type" class="form-radio" checked>
-                                    <span class="ml-2">Residential</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="address_type" class="form-radio">
-                                    <span class="ml-2">Business</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="address_type" class="form-radio">
-                                    <span class="ml-2">Registered Office</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="address_type" class="form-radio">
-                                    <span class="ml-2">Unspecified</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+    <div class="form-title">D. Address details Current Overseas</div>
+    
+    <div class="form-row">
+        <div class="form-group">
+            <label class="block mb-2">Address type*</label>
+            <div class="mt-2 flex gap-4">
+                <label class="inline-flex items-center space-x-2">
+                    <input type="radio" name="address_type" class="form-radio h-4 w-4" checked>
+                    <span>Residential</span>
+                </label>
+                <label class="inline-flex items-center space-x-2">
+                    <input type="radio" name="address_type" class="form-radio h-4 w-4">
+                    <span>Business</span>
+                </label>
+                <label class="inline-flex items-center space-x-2">
+                    <input type="radio" name="address_type" class="form-radio h-4 w-4">
+                    <span>Registered Office</span>
+                </label>
+                <label class="inline-flex items-center space-x-2">
+                    <input type="radio" name="address_type" class="form-radio h-4 w-4">
+                    <span>Unspecified</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
                     
                     <div class="form-row">
                         <div class="form-group">
@@ -1408,37 +1410,38 @@ include 'header.php';
                     </div>
                 </div>
 
-                <!-- Correspondence Address Section -->
-                <div class="form-section">
-                    <div class="form-title">E. Address details Correspondence Same as Current/Overseas Address</div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Address type*</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="correspondence_address_type" class="form-radio" checked>
-                                    <span class="ml-2">Residential/Business</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="correspondence_address_type" class="form-radio">
-                                    <span class="ml-2">Residential</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="correspondence_address_type" class="form-radio">
-                                    <span class="ml-2">Business</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="correspondence_address_type" class="form-radio">
-                                    <span class="ml-2">Registered Office</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="correspondence_address_type" class="form-radio">
-                                    <span class="ml-2">Unspecified</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+         <!-- Correspondence Address Section -->
+<div class="form-section">
+    <div class="form-title">E. Address details Correspondence Same as Current/Overseas Address</div>
+    
+    <div class="form-row">
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700">Address type*</label>
+            <div class="mt-2 flex flex-wrap gap-4">
+                <label class="inline-flex items-center">
+                    <input type="radio" name="correspondence_address_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" checked>
+                    <span class="ml-2 text-sm text-gray-700">Residential/Business</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="correspondence_address_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+                    <span class="ml-2 text-sm text-gray-700">Residential</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="correspondence_address_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+                    <span class="ml-2 text-sm text-gray-700">Business</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="correspondence_address_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+                    <span class="ml-2 text-sm text-gray-700">Registered Office</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="correspondence_address_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+                    <span class="ml-2 text-sm text-gray-700">Unspecified</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
                     
                     <div class="form-row">
                         <div class="form-group">
@@ -1561,25 +1564,23 @@ include 'header.php';
                     </div>
                     
                     <div class="form-row">
-                        <div class="form-group">
-                            <label>Documents received</label>
-                            <div class="mt-2">
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" class="form-checkbox">
-                                    <span class="ml-2">Self-certified True Copies</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="checkbox" class="form-checkbox">
-                                    <span class="ml-2">Notary</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="checkbox" class="form-checkbox">
-                                    <span class="ml-2">Equivalent e-Documents</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  <div class="form-group">
+    <label>Documents received</label>
+    <div class="mt-2 flex flex-wrap gap-4"> <!-- Added flex classes here -->
+      <label class="inline-flex items-center">
+        <input type="checkbox" class="form-checkbox">
+        <span class="ml-2">Self-certified True Copies</span>
+      </label>
+      <label class="inline-flex items-center">
+        <input type="checkbox" class="form-checkbox">
+        <span class="ml-2">Notary</span>
+      </label>
+      <label class="inline-flex items-center">
+        <input type="checkbox" class="form-checkbox">
+        <span class="ml-2">Equivalent e-Documents</span>
+      </label>
+    </div>
+  </div>
 
                 <!-- Account Information Section -->
                 <div class="form-section">
@@ -2395,53 +2396,56 @@ include 'header.php';
                     </div>
                 </div>
 
-                <!-- Account Information Section (for form processing) -->
-                <div class="form-section bg-gray-100 p-4 mt-6">
-                    <h2 class="text-lg font-bold mb-4">Account Information (For Bank Use)</h2>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="required-field">Account Type*</label>
-                            <select name="account_type_id" required class="form-control">
-                                <option value="">Select Account Type</option>
-                                <?php foreach ($account_types as $type): ?>
-                                    <option value="<?= $type['type_id'] ?>" <?= (isset($_POST['account_type_id']) && $_POST['account_type_id'] == $type['type_id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($type['type_name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php if (isset($errors['account_type_id'])): ?>
-                                <p class="text-red-500 text-xs"><?= $errors['account_type_id'] ?></p>
-                            <?php endif; ?>
-                        </div>
-                        <div class="form-group">
-                            <label class="required-field">Account Name*</label>
-                            <input type="text" name="account_name" required class="form-control" 
-                                   value="<?= isset($_POST['account_name']) ? htmlspecialchars($_POST['account_name']) : '' ?>">
-                            <?php if (isset($errors['account_name'])): ?>
-                                <p class="text-red-500 text-xs"><?= $errors['account_name'] ?></p>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="required-field">Initial Deposit* (USD)</label>
-                            <input type="number" name="initial_deposit" required class="form-control" min="0" step="0.01"
-                                   value="<?= isset($_POST['initial_deposit']) ? htmlspecialchars($_POST['initial_deposit']) : '' ?>">
-                            <?php if (isset($errors['initial_deposit'])): ?>
-                                <p class="text-red-500 text-xs"><?= $errors['initial_deposit'] ?></p>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mt-6 flex justify-between">
-                    <a href="customer_management" class="bg-gray-500 hover:bg-gray-700 text-white px-4 py-2 rounded">Cancel</a>
-                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded">Submit Account Opening Form</button>
-                </div>
-            </form>
+               <!-- Account Information Section (for form processing) -->
+<div class="form-section bg-gray-100 p-4 mt-6 rounded-lg border border-gray-300">
+    <h2 class="text-lg font-bold mb-4">Account Information (For Bank Use)</h2>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700 required-field">Account Type*</label>
+            <select name="account_type_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2 px-3 border">
+                <option value="">Select Account Type</option>
+                <?php foreach ($account_types as $type): ?>
+                    <option value="<?= $type['type_id'] ?>" <?= (isset($_POST['account_type_id']) && $_POST['account_type_id'] == $type['type_id']) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($type['type_name']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (isset($errors['account_type_id'])): ?>
+                <p class="mt-1 text-sm text-red-600"><?= $errors['account_type_id'] ?></p>
+            <?php endif; ?>
         </div>
+        
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700 required-field">Account Name*</label>
+            <input type="text" name="account_name" required 
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2 px-3 border"
+                   value="<?= isset($_POST['account_name']) ? htmlspecialchars($_POST['account_name']) : '' ?>">
+            <?php if (isset($errors['account_name'])): ?>
+                <p class="mt-1 text-sm text-red-600"><?= $errors['account_name'] ?></p>
+            <?php endif; ?>
+        </div>
+        
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700 required-field">Initial Deposit* (USD)</label>
+            <input type="number" name="initial_deposit" required min="0" step="0.01"
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2 px-3 border"
+                   value="<?= isset($_POST['initial_deposit']) ? htmlspecialchars($_POST['initial_deposit']) : '' ?>">
+            <?php if (isset($errors['initial_deposit'])): ?>
+                <p class="mt-1 text-sm text-red-600"><?= $errors['initial_deposit'] ?></p>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <div class="mt-6 flex justify-between">
+        <a href="customer_management" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            Cancel
+        </a>
+        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            Submit Account Opening Form
+        </button>
+    </div>
+</div>
     <?php else: ?>
         <!-- Customer List View -->
         <div class="bg-white p-6 rounded-lg shadow">
