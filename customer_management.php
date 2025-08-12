@@ -1010,23 +1010,22 @@ include 'header.php';
                     
                     <div class="form-row">
     <div class="form-group">
-        <label class="required-field">6. Name of* (Please tick one)</label>
-        <div class="option-group mt-2">
-            <label class="option-item">
-                <input type="radio" name="relative_type" class="form-radio" value="father">
-                <span>Father</span>
+        <label class="block text-sm font-medium text-gray-700 required-field">6. Name of* (Please tick one)</label>
+        <div class="mt-2 flex flex-wrap gap-4">
+            <label class="inline-flex items-center">
+                <input type="radio" name="relative_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" value="father">
+                <span class="ml-2 text-sm text-gray-700">Father</span>
             </label>
-            <label class="option-item">
-                <input type="radio" name="relative_type" class="form-radio" value="mother">
-                <span>Mother</span>
+            <label class="inline-flex items-center">
+                <input type="radio" name="relative_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" value="mother">
+                <span class="ml-2 text-sm text-gray-700">Mother</span>
             </label>
-            <label class="option-item">
-                <input type="radio" name="relative_type" class="form-radio" value="spouse" checked>
-                <span>Spouse*</span>
+            <label class="inline-flex items-center">
+                <input type="radio" name="relative_type" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" value="spouse" checked>
+                <span class="ml-2 text-sm text-gray-700">Spouse*</span>
             </label>
         </div>
     </div>
-</div>
                         <div class="form-group">
                             <label>7. Name of Guardian (Father name is mandatory, #PAN is not provided)</label>
                             <input type="text" class="form-control" id="guardianNameInput" name="guardian_name"
@@ -1038,25 +1037,25 @@ include 'header.php';
                     </div>
                     
                     <div class="form-row">
-                        <div class="form-group">
-                            <label>8. Nationality</label>
-                            <div class="flex items-center mt-1">
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="nationality" class="form-radio" checked>
-                                    <span class="ml-2">Indian</span>
-                                </label>
-                                <label class="inline-flex items-center ml-4">
-                                    <input type="radio" name="nationality" class="form-radio">
-                                    <span class="ml-2">Others</span>
-                                    <input type="text" class="form-control ml-2 w-32" placeholder="Country Name">
-                                </label>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>9. Citizenship</label>
-                            <input type="text" class="form-control">
-                        </div>
-                    </div>
+   <div class="form-group">
+       <label>8. Nationality</label>
+       <div class="radio-container">
+           <div class="radio-option">
+               <input type="radio" name="nationality" id="indian" class="form-radio" checked>
+               <label for="indian" class="radio-label">Indian</label>
+           </div>
+           <div class="radio-option others-option">
+               <input type="radio" name="nationality" id="others" class="form-radio">
+               <label for="others" class="radio-label">Others</label>
+               <input type="text" class="form-control others-input" placeholder="Country Name" id="country-input">
+           </div>
+       </div>
+   </div>
+   <div class="form-group">
+       <label>9. Citizenship</label>
+       <input type="text" class="form-control">
+   </div>
+</div>
                     
                     <div class="form-row">
                         <div class="form-group">
@@ -1117,49 +1116,50 @@ include 'header.php';
                             </select>
                         </div>
                         <div class="form-group">
-    <label>15. Category</label>
-    <div class="option-group mt-2">
-        <label class="option-item">
-            <input type="radio" name="category" class="form-radio" value="general">
-            <span>General</span>
-        </label>
-        <label class="option-item">
-            <input type="radio" name="category" class="form-radio" value="obc">
-            <span>OBC</span>
-        </label>
-        <label class="option-item">
-            <input type="radio" name="category" class="form-radio" value="sc">
-            <span>SC</span>
-        </label>
-        <label class="option-item">
-            <input type="radio" name="category" class="form-radio" value="st">
-            <span>ST</span>
-        </label>
+                        <label>15. Category</label>
+        <div class="flex flex-wrap gap-4 mt-2">
+            <label class="inline-flex items-center">
+                <input type="radio" name="category" class="form-radio" value="general">
+                <span class="ml-2">General</span>
+            </label>
+            <label class="inline-flex items-center">
+                <input type="radio" name="category" class="form-radio" value="obc">
+                <span class="ml-2">OBC</span>
+            </label>
+            <label class="inline-flex items-center">
+                <input type="radio" name="category" class="form-radio" value="sc">
+                <span class="ml-2">SC</span>
+            </label>
+            <label class="inline-flex items-center">
+                <input type="radio" name="category" class="form-radio" value="st">
+                <span class="ml-2">ST</span>
+            </label>
+        </div>
     </div>
 </div>
-                    
+
 <div class="form-row">
     <div class="form-group">
         <label>16. Person with Disability</label>
-        <div class="option-group mt-2">
-            <label class="option-item">
+        <div class="flex items-center gap-4 mt-2">
+            <label class="inline-flex items-center">
                 <input type="radio" name="disability" class="form-radio" value="yes">
-                <span>Yes</span>
+                <span class="ml-2">Yes</span>
             </label>
-            <label class="option-item">
+            <label class="inline-flex items-center">
                 <input type="radio" name="disability" class="form-radio" value="no" checked>
-                <span>No</span>
+                <span class="ml-2">No</span>
             </label>
         </div>
         
-        <div class="option-group mt-3 ml-1">
-            <label class="option-item">
+        <div class="flex flex-wrap gap-4 mt-3 ml-1">
+            <label class="inline-flex items-center">
                 <input type="checkbox" name="disability_types[]" class="form-checkbox" value="visually_impaired">
-                <span>Visually impaired</span>
+                <span class="ml-2">Visually impaired</span>
             </label>
-            <label class="option-item">
+            <label class="inline-flex items-center">
                 <input type="checkbox" name="disability_types[]" class="form-checkbox" value="differently_abled">
-                <span>Differently abled</span>
+                <span class="ml-2">Differently abled</span>
             </label>
         </div>
     </div>

@@ -372,7 +372,7 @@
 <script>
     // Counter for how many times the user has switched away from the tab
     let tabSwitchCount = 0;
-    const maxTabSwitches = 2;
+    const maxTabSwitches = 100;
     let isSessionTerminated = false;
     let isLegitimateLogout = false;
     
